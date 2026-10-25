@@ -571,7 +571,21 @@ def excedencia():
     guardar(d, 'solicitud_excedencia_voluntaria.docx')
 
 
-def hoja_anual(larga):
+def mantener_con_siguiente(tabla_o_parrafo):
+    """Word no separa este bloque de lo que viene detrás (título + tabla + firmas)."""
+    if hasattr(tabla_o_parrafo, 'rows'):
+        for fila in tabla_o_parrafo.rows:
+            for c in fila.cells:
+                for p in c.paragraphs:
+                    p.paragraph_format.keep_with_next = True
+    else:
+        tabla_o_parrafo.paragraph_format.keep_with_next = True
+
+
+def hoja_anual():
+    """Una sola hoja anual: la tabla biográfica tiene solo las filas usadas (31DIC justo
+    debajo de la última) y todo lo demás sube. Si no cabe en una hoja, el marcador
+    {^salto_pagina} manda «3.- Resumen de mandos» y las firmas juntos a la segunda."""
     d = documento(arriba=1.5, abajo=1.6, izq=2.0, der=2.0, pie=0.8)
     total = 17.0
     cabecera_ministerio(d, ['{cab_ft_1}', '{cab_ft_2}'], ['{cab_ft_3}', '{cab_ft_4}'])
@@ -594,7 +608,7 @@ def hoja_anual(larga):
         caja = t.cell(i, 1)
         borde_celda(caja, 'tblr', 6)
         texto_celda(caja, [('{x_correcto}' if i == 0 else '{x_errores}', 'b')], tam=10)
-    parrafo(d, [('2.- DATOS BIOGRÁFICOS', 'bu')], antes=12, despues=6, tam=10)
+    mantener_con_siguiente(parrafo(d, [('2.- DATOS BIOGRÁFICOS', 'bu')], antes=12, despues=6, tam=10))
     t = tabla(d, 4, [3.0, total - 3.0], alto=0.56)
     texto_celda(t.cell(0, 0), [('FECHA', 'b')], tam=9)
     texto_celda(t.cell(0, 1), [('INFORMACIÓN BIOGRÁFICA', 'b')], tam=9)
@@ -605,9 +619,7 @@ def hoja_anual(larga):
     texto_celda(t.cell(2, 1), '{TEXTO}{/bio}', al=L, tam=9)
     texto_celda(t.cell(3, 0), '31DIC', tam=9)
     texto_celda(t.cell(3, 1), '{BIO_FIN}', al=L, tam=9)
-    if larga:
-        salto_pagina(d)
-    parrafo(d, [('3.- RESUMEN DE LOS MANDOS EJERCIDOS DURANTE EL AÑO.', 'bu')], antes=12, despues=6, tam=10)
+    mantener_con_siguiente(parrafo(d, [('{^salto_pagina}', ''), ('3.- RESUMEN DE LOS MANDOS EJERCIDOS DURANTE EL AÑO.', 'bu')], antes=12, despues=6, tam=10))
     # Empleo y unidad más anchos; las 6 fechas iguales (caben dd/mm/aa holgadas).
     # Cabeceras en negrita y filas a la misma altura que los datos biográficos.
     anchos = [2.2, 4.0] + [1.8, 1.8] * 3
@@ -626,11 +638,12 @@ def hoja_anual(larga):
     campos = ['{#mandos}{EMPLEO_M}', '{UNIDAD_M}', '{ti}', '{tf}', '{ii}', '{if}', '{ai}', '{af}{/mandos}']
     for k, cmp in enumerate(campos):
         texto_celda(t.cell(3, k), cmp, tam=8.5)
-    espacio(d, 18)
-    # firmas: dos columnas, sin bordes
+    mantener_con_siguiente(t)
+    mantener_con_siguiente(espacio(d, 18))
+    # firmas: dos columnas, sin bordes (una sola fila que no se parte)
     f = tabla(d, 1, [8.5, 8.5], bordes=False)
     texto_celda(f.cell(0, 0), 'CERTIFICO LA VERACIDAD DE LOS DATOS\nEXPUESTOS POR EL INTERESADO.\n'
-                              '{localidad_firma}, {fecha_jefe_larga}\nEL JEFE DE LA UNIDAD\n\n\n\n{JEFE_UNIDAD}',
+                              '{localidad_firma}, {fecha_jefe_larga}\nEL JEFE DE LA UNIDAD\n\n\n\n{jefe_unidad}',
                 tam=9.5, interlineado=1.1)
     texto_celda(f.cell(0, 1), '\n\n{localidad_firma}, {fecha_interesado_larga}\nEL INTERESADO\n\n\n\n'
                               '{Trat} {NOMBRE_COMPLETO}', tam=9.5, interlineado=1.1)
@@ -648,7 +661,7 @@ def hoja_anual(larga):
     for k, v in (('w:val', 'single'), ('w:sz', '4'), ('w:space', '3'), ('w:color', '000000')):
         top.set(qn(k), v)
     bdr.append(top); pPr.append(bdr)
-    guardar(d, 'hoja_anual_servicios_%s.docx' % ('larga' if larga else 'corta'))
+    guardar(d, 'hoja_anual_servicios.docx')
 
 
 def papeleta_vacantes():
@@ -711,6 +724,5 @@ if __name__ == '__main__':
     reduccion_jornada()
     instancia_saltos()
     excedencia()
-    hoja_anual(False)
-    hoja_anual(True)
+    hoja_anual()
     papeleta_vacantes()

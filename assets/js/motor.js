@@ -112,6 +112,20 @@
   /* Párrafos condicionales: si un párrafo contiene {?campo} y el campo está vacío,
    * se elimina el párrafo entero; si tiene valor, solo se quita la marca. */
   function condicionales(doc, datos) {
+    // {^campo}: si el campo tiene valor, el párrafo empieza en hoja nueva (salto de página antes)
+    for (const p of hijos(doc, 'p')) {
+      const m = textoDe(p).match(/\{\^([^}]+)\}/);
+      if (!m) continue;
+      hijos(p, 't').forEach(t => { t.textContent = t.textContent.replace(/\{\^[^}]+\}/g, ''); });
+      const v = buscar(m[1], [datos]);
+      if (v === '' || v === false || v === '0') continue;
+      let pPr = Array.from(p.childNodes).find(n => n.localName === 'pPr');
+      if (!pPr) { pPr = doc.createElementNS(W, 'w:pPr'); p.insertBefore(pPr, p.firstChild); }
+      const salto = doc.createElementNS(W, 'w:pageBreakBefore');
+      // orden del esquema: pStyle, keepNext, keepLines, pageBreakBefore, ...
+      const despues = Array.from(pPr.childNodes).filter(n => ['pStyle', 'keepNext', 'keepLines'].includes(n.localName)).pop();
+      pPr.insertBefore(salto, despues ? despues.nextSibling : pPr.firstChild);
+    }
     for (const p of hijos(doc, 'p')) {
       const tx = textoDe(p);
       const m = tx.match(/\{\?([^}]+)\}/);

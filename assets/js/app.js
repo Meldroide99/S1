@@ -597,7 +597,7 @@
     for (const s of destino.querySelectorAll('section.' + cls)) s.classList.add('docx', 'hoja-docx');
     destino.querySelector('.' + cls + '-wrapper')?.classList.add('docx-wrapper');
     const st = document.createElement('style');
-    st.textContent = `section.${cls} > footer { display:flex; flex-direction:column; justify-content:flex-end; }`;
+    st.textContent = `section.${cls} > footer { display:flex; flex-direction:column; justify-content:flex-end; } section.${cls} * { hyphens: manual !important; -webkit-hyphens: manual !important; }`; // Word no divide palabras con guion
     destino.appendChild(st);
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
     return destino;
@@ -610,6 +610,34 @@
     });
     return out;
   }
+  /* Espacio libre (px) al pie de la hoja más llena; negativo si algo no cabe. */
+  function huecoLibre(cont) {
+    let min = Infinity;
+    cont.querySelectorAll('section.hoja-docx').forEach(s => {
+      const art = s.querySelector('article'); if (!art) return;
+      const pie = s.querySelector('footer');
+      const limite = pie ? pie.offsetTop : s.clientHeight - parseFloat(getComputedStyle(s).paddingBottom);
+      const altoPagina = parseFloat((s.style.minHeight || '').replace('pt', '')) * 4 / 3;
+      const desborde = altoPagina && s.scrollHeight > altoPagina + 2 ? -(s.scrollHeight - altoPagina) : Infinity;
+      min = Math.min(min, limite - (art.offsetTop + art.offsetHeight), desborde);
+    });
+    return min;
+  }
+  const MARGEN_SEGURIDAD = 30; // px (≈ 0,8 cm): colchón para que en Word tampoco salte de hoja
+  /** Rellena y maqueta. Si el documento admite salto automático y no cabe holgado en una hoja,
+   *  vuelve a generarlo con el salto (los bloques que van juntos pasan enteros a la hoja siguiente). */
+  async function documentoFinal(def, d) {
+    let blob = await M.rellenar(window.PLANTILLAS[def.plantilla], d);
+    const cont = document.createElement('div'); $('#taller').appendChild(cont);
+    await renderizar(blob, cont);
+    if (def.autoSalto && !d[def.autoSalto] && huecoLibre(cont) < MARGEN_SEGURIDAD) {
+      d[def.autoSalto] = '1';
+      blob = await M.rellenar(window.PLANTILLAS[def.plantilla], d);
+      await renderizar(blob, cont);
+    }
+    return { blob, cont };
+  }
+
   async function actualizar(ctx) {
     if (!$('#avisos') || !$('#hojas')) return; // se ha cambiado de página
     const { def } = ctx; const v = ++S.version;
@@ -617,11 +645,7 @@
     const { d, av } = construirDatos(def, persona, ctx.valores, ctx.tablas);
     pintarRevision(ctx, d, av);
     try {
-      const blob = await M.rellenar(window.PLANTILLAS[def.plantilla], d);
-      if (v !== S.version) return;
-      const tmp = document.createElement('div');
-      $('#taller').appendChild(tmp);
-      await renderizar(blob, tmp);
+      const { blob, cont: tmp } = await documentoFinal(def, d);
       if (v !== S.version) { tmp.remove(); return; }
       const hojas = $('#hojas'); if (!hojas) { tmp.remove(); return; }
       hojas.replaceChildren(...tmp.childNodes); tmp.remove();
@@ -698,7 +722,8 @@
           boton.textContent = `Word ${i + 1}/${sel.length}…`;
           const { d } = construirDatos(def, copiaPersona(sel[i]), ctx.valores, ctx.tablas);
           let nom = nombreDoc(def, sel[i]); while (usados.has(nom)) nom += '_2'; usados.add(nom);
-          zip.file(nom + '.docx', await M.rellenar(window.PLANTILLAS[def.plantilla], d));
+          const { blob, cont } = await documentoFinal(def, d); cont.remove();
+          zip.file(nom + '.docx', blob);
         }
         descargar(await zip.generateAsync({ type: 'blob' }), C.nombreArchivo(def.id, sel.length + '_personas') + '.zip');
         toast(`${sel.length} documentos Word en un ZIP.`);
@@ -707,9 +732,8 @@
         for (let i = 0; i < sel.length; i++) {
           boton.textContent = `PDF ${i + 1}/${sel.length}…`;
           const { d } = construirDatos(def, copiaPersona(sel[i]), ctx.valores, ctx.tablas);
-          const blob = await M.rellenar(window.PLANTILLAS[def.plantilla], d);
-          const cont = document.createElement('div'); $('#taller').appendChild(cont);
-          try { await renderizar(blob, cont); await pdf.anadir(cont); } finally { cont.remove(); }
+          const { cont } = await documentoFinal(def, d);
+          try { await pdf.anadir(cont); } finally { cont.remove(); }
         }
         descargar(await pdf.blob(), C.nombreArchivo(def.id, sel.length + '_personas') + '.pdf');
         toast(`PDF con ${sel.length} documentos (${pdf.paginas()} hojas), listo para imprimir de una vez.`);
@@ -833,7 +857,10 @@
     $$('.secciones-nav a').forEach(x => x.classList.toggle('activa', x.dataset.sec === a));
     window.onresize = null;
     if (!a) vistaInicio();
-    else if (SECCIONES[a] && b) { const d = docPorId(b); d ? vistaEditor(d) : vistaSeccion(a); }
+    else if (SECCIONES[a] && b) {
+      if (/^hoja_anual_servicios_(corta|larga)$/.test(b)) { location.replace('#/s1/hoja_anual_servicios'); return; }
+      const d = docPorId(b); d ? vistaEditor(d) : vistaSeccion(a);
+    }
     else if (SECCIONES[a]) vistaSeccion(a);
     else if (a === 'ajustes') vistaAjustes();
     else if (a === 'datos') vistaDatos();

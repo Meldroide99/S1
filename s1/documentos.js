@@ -198,63 +198,56 @@
       return { clave: C.norm(fecha + ' ' + info), fecha, texto: info };
     });
   }
-  function hojaAnual(larga) {
-    const filas = larga ? 18 : 7, mandos = larga ? 6 : 3;
-    const otra = larga ? 'hoja_anual_servicios_corta' : 'hoja_anual_servicios_larga';
-    reg({
-      id: 'hoja_anual_servicios_' + (larga ? 'larga' : 'corta'), plantilla: 'hoja_anual_servicios_' + (larga ? 'larga' : 'corta'),
-      estado: 'hoja_anual', // corta y larga comparten lo rellenado: se puede cambiar de una a otra sin perder nada
-      titulo: `Hoja anual de servicios (${larga ? 'larga · 2 hojas' : 'corta · 1 hoja'})`, grupo: 'Hoja anual',
-      resumen: `Anexo I. Trae ya los ejercicios del año: solo hay que quitar los que no ha hecho. ${filas} filas, ${mandos} de mandos.`,
-      norma: 'IT de la hoja anual de servicios · Anexo I',
-      lote: true,
-      campos: [
-        N('anio', 'Año', { def: () => String(new Date().getFullYear()), ancho: 'medio', oblig: true }),
-        { id: 'datos_admin', et: 'Datos administrativos', tipo: 'radio', def: 'correcto', opciones: [{ v: 'correcto', et: 'Comprobados y correctos' }, { v: 'errores', et: 'Con errores (nota de reparos)' }] },
-        T('puesto_inicio', 'Puesto táctico al empezar el año', { ayuda: 'Ej.: TIRADOR DE LA 1ª SECCIÓN' }),
-        T('puesto_fin', 'Puesto táctico al acabar el año', { ayuda: 'Vacío = el mismo que al empezar.' }),
-        A('bio_inicio_libre', 'Otro texto para el 01ENE (opcional)', { ayuda: 'Si se rellena, sustituye a «COMIENZA EL AÑO EN LA MISMA SITUACIÓN…»' }),
-        F('fecha_interesado', 'Fecha del interesado', { def: a => `${new Date().getFullYear()}-12-31`, ancho: 'medio' }),
-        F('fecha_jefe', 'Fecha del jefe de unidad', { def: a => `${new Date().getFullYear()}-12-31`, ancho: 'medio' }),
-        T('jefe_unidad', 'Jefe de la unidad (firma)', { def: a => a.jefe_unidad, ayuda: 'Se guarda en Ajustes para no repetirlo.' }),
-        { id: 'ejercicios_fuera', et: 'Ejercicios de la unidad', tipo: 'checklist', grupo: 'Ejercicios del año', def: [],
-          opciones: a => ejerciciosDe(a.ejercicios).map(e => ({ v: e.clave, et: e.texto, sub: e.fecha })),
-          ayuda: 'Quita la marca de los que no ha hecho. La lista se cambia en Ajustes (engranaje) y vale para todos los años.' },
-      ],
-      tablas: [
-        { id: 'bio', et: 'Otras vicisitudes (cursos, comisiones, bajas…)', filas, max: filas, inicio: 1, ayuda: 'Se mezclan con los ejercicios y se ordenan por fecha.',
-          columnas: [T('fecha', 'Fecha', { ph: '7-11SEP' }), T('texto', 'Información biográfica', { ph: 'CURSO BÁSICO PARACAIDISTA' })] },
-        { id: 'mandos', et: 'Mandos ejercidos', filas: mandos, max: mandos,
-          fichas: 'Mando', // demasiadas columnas para una tabla en el panel: una ficha por mando
-          columnas: [T('empleo_m', 'Empleo', { ph: 'CBO' }), T('unidad_m', 'Tipo de unidad', { ph: 'PELOTÓN' }),
-            F('ti', 'Inicio', { grupo: 'Titular' }), F('tf', 'Fin', { grupo: 'Titular' }),
-            F('ii', 'Inicio', { grupo: 'Interino' }), F('if', 'Fin', { grupo: 'Interino' }),
-            F('ai', 'Inicio', { grupo: 'Accidental' }), F('af', 'Fin', { grupo: 'Accidental' })] },
-      ],
-      calcular(d, av) {
-        d.x_correcto = d.datos_admin === 'correcto' ? 'X' : '';
-        d.x_errores = d.datos_admin === 'errores' ? 'X' : '';
-        const pi = (d.puesto_inicio || '').trim(), pf = (d.puesto_fin || '').trim() || pi;
-        d.bio_inicio = d.bio_inicio_libre || 'COMIENZA EL AÑO EN LA MISMA SITUACIÓN QUE EL ANTERIOR COMO ' + (pi || '…');
-        d.bio_fin = 'SIN MÁS VICISITUDES FINALIZA EL AÑO COMO ' + (pf || '…');
-        if (!pi && !d.bio_inicio_libre) av.push({ tipo: 'falta', txt: 'Falta el puesto táctico.' });
-        if (!d.jefe_unidad) av.push({ tipo: 'falta', txt: 'Falta el nombre del jefe de la unidad (Ajustes).' });
-        const fuera = new Set(d.ejercicios_fuera || []);
-        const ejercicios = ejerciciosDe(d.ejercicios).filter(e => !fuera.has(e.clave)).map(e => ({ fecha: e.fecha, texto: e.texto }));
-        const propias = d.bio.filter(r => r.fecha || r.texto);
-        // orden cronológico estable (lo que no tenga fecha reconocible va al final, en su orden)
-        d.bio = [...ejercicios, ...propias].map((r, i) => [claveFecha(r.fecha), i, r]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]);
-        const n = d.bio.length;
-        if (n > filas) av.push({ tipo: 'error', txt: `Hay ${n} vicisitudes y en la ${larga ? 'larga' : 'corta'} caben ${filas}. ${larga ? 'Quita alguna o agrupa varias en una fila.' : 'Pasa a la versión larga (no se pierde nada).'}`, enlace: larga ? null : '#/s1/' + otra, textoEnlace: 'Pasar a la larga' });
-        else av.push({ tipo: 'info', txt: `${n} de ${filas} filas biográficas usadas.` + (!larga ? '' : n <= 7 ? ' Cabe en la versión corta (1 hoja).' : ''), enlace: larga && n <= 7 ? '#/s1/' + otra : null, textoEnlace: 'Pasar a la corta' });
-        // fechas de mandos en dd/mm/aa: caben en su casilla sin partirse
-        d.mandos = d.mandos.map(m => { const o = { ...m }; for (const k of ['ti', 'tf', 'ii', 'if', 'ai', 'af']) o[k] = String(o[k] || '').replace(/^(\d{2}\/\d{2}\/)\d{2}(\d{2})$/, '$1$2'); return o; });
-        d._filas_bio = filas;
-      },
-    });
-  }
-  hojaAnual(false);
-  hojaAnual(true);
+  reg({
+    id: 'hoja_anual_servicios', plantilla: 'hoja_anual_servicios', estado: 'hoja_anual',
+    titulo: 'Hoja anual de servicios', grupo: 'Hoja anual',
+    resumen: 'Anexo I. Trae ya los ejercicios del año: solo hay que quitar los que no ha hecho. Sin filas vacías: ocupa 1 hoja o 2 según lo que lleve.',
+    norma: 'IT de la hoja anual de servicios · Anexo I',
+    lote: true,
+    // si no cabe en una hoja, «3.- Resumen de mandos» y las firmas pasan juntos a la segunda
+    autoSalto: 'salto_pagina',
+    campos: [
+      N('anio', 'Año', { def: () => String(new Date().getFullYear()), ancho: 'medio', oblig: true }),
+      { id: 'datos_admin', et: 'Datos administrativos', tipo: 'radio', def: 'correcto', opciones: [{ v: 'correcto', et: 'Comprobados y correctos' }, { v: 'errores', et: 'Con errores (nota de reparos)' }] },
+      T('puesto_inicio', 'Puesto táctico al empezar el año', { ayuda: 'Ej.: TIRADOR DE LA 1ª SECCIÓN' }),
+      T('puesto_fin', 'Puesto táctico al acabar el año', { ayuda: 'Vacío = el mismo que al empezar.' }),
+      A('bio_inicio_libre', 'Otro texto para el 01ENE (opcional)', { ayuda: 'Si se rellena, sustituye a «COMIENZA EL AÑO EN LA MISMA SITUACIÓN…»' }),
+      F('fecha_interesado', 'Fecha del interesado', { def: a => `${new Date().getFullYear()}-12-31`, ancho: 'medio' }),
+      F('fecha_jefe', 'Fecha del jefe de unidad', { def: a => `${new Date().getFullYear()}-12-31`, ancho: 'medio' }),
+      T('jefe_unidad', 'Jefe de la unidad (firma)', { def: a => a.jefe_unidad, ayuda: 'Sale tal cual se escribe. El valor por defecto se cambia en Ajustes.' }),
+      { id: 'ejercicios_fuera', et: 'Ejercicios de la unidad', tipo: 'checklist', grupo: 'Ejercicios del año', def: [],
+        opciones: a => ejerciciosDe(a.ejercicios).map(e => ({ v: e.clave, et: e.texto, sub: e.fecha })),
+        ayuda: 'Quita la marca de los que no ha hecho. La lista se cambia en Ajustes (engranaje).' },
+    ],
+    tablas: [
+      { id: 'bio', et: 'Otras vicisitudes (cursos, comisiones, bajas…)', filas: 0, max: 30, inicio: 1, ayuda: 'Se mezclan con los ejercicios y se ordenan por fecha.',
+        columnas: [T('fecha', 'Fecha', { ph: '7-11SEP' }), T('texto', 'Información biográfica', { ph: 'CURSO BÁSICO PARACAIDISTA' })] },
+      { id: 'mandos', et: 'Mandos ejercidos', filas: 1, max: 6, fichas: 'Mando', ayuda: 'Sin mandos, la tabla sale con una sola fila en blanco.',
+        columnas: [T('empleo_m', 'Empleo', { ph: 'CBO' }), T('unidad_m', 'Tipo de unidad', { ph: 'PELOTÓN' }),
+          F('ti', 'Inicio', { grupo: 'Titular' }), F('tf', 'Fin', { grupo: 'Titular' }),
+          F('ii', 'Inicio', { grupo: 'Interino' }), F('if', 'Fin', { grupo: 'Interino' }),
+          F('ai', 'Inicio', { grupo: 'Accidental' }), F('af', 'Fin', { grupo: 'Accidental' })] },
+    ],
+    calcular(d, av) {
+      d.x_correcto = d.datos_admin === 'correcto' ? 'X' : '';
+      d.x_errores = d.datos_admin === 'errores' ? 'X' : '';
+      const pi = (d.puesto_inicio || '').trim(), pf = (d.puesto_fin || '').trim() || pi;
+      d.bio_inicio = d.bio_inicio_libre || 'COMIENZA EL AÑO EN LA MISMA SITUACIÓN QUE EL ANTERIOR COMO ' + (pi || '…');
+      d.bio_fin = 'SIN MÁS VICISITUDES FINALIZA EL AÑO COMO ' + (pf || '…');
+      if (!pi && !d.bio_inicio_libre) av.push({ tipo: 'falta', txt: 'Falta el puesto táctico.' });
+      if (!d.jefe_unidad) av.push({ tipo: 'falta', txt: 'Falta el nombre del jefe de la unidad (Ajustes).' });
+      const fuera = new Set(d.ejercicios_fuera || []);
+      const ejercicios = ejerciciosDe(d.ejercicios).filter(e => !fuera.has(e.clave)).map(e => ({ fecha: e.fecha, texto: e.texto }));
+      const propias = d.bio.filter(r => r.fecha || r.texto);
+      // solo las filas usadas, en orden cronológico (lo que no tenga fecha reconocible, al final)
+      d.bio = [...ejercicios, ...propias].map((r, i) => [claveFecha(r.fecha), i, r]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]);
+      // mandos: solo los rellenos, en dd/mm/aa para que no se partan
+      d.mandos = d.mandos.filter(m => Object.values(m).some(Boolean)).map(m => {
+        const o = { ...m }; for (const k of ['ti', 'tf', 'ii', 'if', 'ai', 'af']) o[k] = String(o[k] || '').replace(/^(\d{2}\/\d{2}\/)\d{2}(\d{2})$/, '$1$2'); return o;
+      });
+      av.push({ tipo: 'info', txt: `${d.bio.length} vicisitudes entre el 01ENE y el 31DIC.` });
+    },
+  });
 
   // ================================================================== DESTINOS
   reg({
