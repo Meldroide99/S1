@@ -397,3 +397,7 @@ section.docx > footer { display: flex; flex-direction: column; justify-content: 
 @media (max-width: 860px) { .portada-marca img { height: 90px; } .portada-nombre { font-size: 44px; } }
 @media (max-width: 440px) { .marca-texto { display: flex; } .marca-texto small { display: none; } .marca-texto strong { font-size: 21px; } }
 @media (max-width: 560px) { .cifras { gap: 18px 26px; } .cifra strong { font-size: 36px; } .portada { padding-top: 34px; } }
+/* portada: «Lauria» a lo grande */
+.titular-lauria { font: 400 clamp(84px, 13vw, 176px)/.9 var(--serif); letter-spacing: -.02em; margin: 18px 0 0 -4px; color: #fff;
+  background: linear-gradient(180deg, #FFFFFF 30%, #E9DCC0 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  text-shadow: none; filter: drop-shadow(0 6px 18px rgba(0,0,0,.35)); }

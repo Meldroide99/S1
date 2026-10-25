@@ -190,7 +190,7 @@
       <div>
         <div class="portada-marca"><img src="assets/img/escudo-bpac.png" alt="Escudo del BILPAC II «Roger de Lauria»" width="400" height="468">
           <div><span class="eyebrow">BILPAC II · «Roger de Lauria»</span><div class="portada-nombre">II<em>BPAC</em></div></div></div>
-        <h1 class="titular" style="margin-top:22px">Sonríe,<br>mañana será <i>peor</i>.</h1>
+        <h1 class="titular titular-lauria">Lauria</h1>
         <p class="lead">Elige el modelo, escribe dos letras del apellido y el documento se rellena solo con los datos del Excel. Revisa la hoja tal como saldrá impresa y descárgala en Word o PDF.</p>
         <div class="cifras">
           <div class="cifra"><strong>${total}</strong><span>Modelos</span></div>
