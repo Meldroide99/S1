@@ -183,12 +183,29 @@
   });
 
   // ================================================================== HOJA ANUAL
+  // Los ejercicios de la unidad vienen ya puestos (se editan en Ajustes) y se desmarcan
+  // los que no ha hecho cada uno. Lo personal se añade aparte y todo se ordena por fecha.
+  const MESES = { ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6, JUL: 7, AGO: 8, SEP: 9, SET: 9, OCT: 10, NOV: 11, DIC: 12 };
+  function claveFecha(txt) {
+    const t = C.sinAcentos(String(txt || '')).toUpperCase();
+    const dia = t.match(/\d{1,2}/), mes = t.match(/ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|SET|OCT|NOV|DIC/);
+    return dia && mes ? MESES[mes[0]] * 100 + +dia[0] : 9999;
+  }
+  function ejerciciosDe(texto) {
+    return String(texto || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+      const [f, ...r] = l.split('|');
+      const fecha = r.length ? f.trim() : '', info = (r.length ? r.join('|') : f).trim();
+      return { clave: C.norm(fecha + ' ' + info), fecha, texto: info };
+    });
+  }
   function hojaAnual(larga) {
     const filas = larga ? 18 : 7, mandos = larga ? 6 : 3;
+    const otra = larga ? 'hoja_anual_servicios_corta' : 'hoja_anual_servicios_larga';
     reg({
       id: 'hoja_anual_servicios_' + (larga ? 'larga' : 'corta'), plantilla: 'hoja_anual_servicios_' + (larga ? 'larga' : 'corta'),
+      estado: 'hoja_anual', // corta y larga comparten lo rellenado: se puede cambiar de una a otra sin perder nada
       titulo: `Hoja anual de servicios (${larga ? 'larga · 2 hojas' : 'corta · 1 hoja'})`, grupo: 'Hoja anual',
-      resumen: `Anexo I. ${filas} filas de datos biográficos y ${mandos} de mandos. Ideal para sacarla de toda una compañía de golpe.`,
+      resumen: `Anexo I. Trae ya los ejercicios del año: solo hay que quitar los que no ha hecho. ${filas} filas, ${mandos} de mandos.`,
       norma: 'IT de la hoja anual de servicios · Anexo I',
       lote: true,
       campos: [
@@ -200,10 +217,13 @@
         F('fecha_interesado', 'Fecha del interesado', { def: a => `${new Date().getFullYear()}-12-31`, ancho: 'medio' }),
         F('fecha_jefe', 'Fecha del jefe de unidad', { def: a => `${new Date().getFullYear()}-12-31`, ancho: 'medio' }),
         T('jefe_unidad', 'Jefe de la unidad (firma)', { def: a => a.jefe_unidad, ayuda: 'Se guarda en Ajustes para no repetirlo.' }),
+        { id: 'ejercicios_fuera', et: 'Ejercicios de la unidad', tipo: 'checklist', grupo: 'Ejercicios del año', def: [],
+          opciones: a => ejerciciosDe(a.ejercicios).map(e => ({ v: e.clave, et: e.texto, sub: e.fecha })),
+          ayuda: 'Quita la marca de los que no ha hecho. La lista se cambia en Ajustes (engranaje) y vale para todos los años.' },
       ],
       tablas: [
-        { id: 'bio', et: 'Datos biográficos (entre 01ENE y 31DIC)', filas, max: filas, ayuda: 'Ejercicios, comisiones, cursos… En modo «varias personas» estas filas valen para todos.',
-          columnas: [T('fecha', 'Fecha', { ph: '7-11SEP' }), T('texto', 'Información biográfica', { ph: 'EX. LONE PARATROOPER (LEÓN)' })] },
+        { id: 'bio', et: 'Otras vicisitudes (cursos, comisiones, bajas…)', filas, max: filas, inicio: 1, ayuda: 'Se mezclan con los ejercicios y se ordenan por fecha.',
+          columnas: [T('fecha', 'Fecha', { ph: '7-11SEP' }), T('texto', 'Información biográfica', { ph: 'CURSO BÁSICO PARACAIDISTA' })] },
         { id: 'mandos', et: 'Mandos ejercidos', filas: mandos, max: mandos,
           columnas: [T('empleo_m', 'Empleo'), T('unidad_m', 'Tipo de unidad'), T('ti', 'Tit. inicio'), T('tf', 'Tit. fin'), T('ii', 'Int. inicio'), T('if', 'Int. fin'), T('ai', 'Acc. inicio'), T('af', 'Acc. fin')] },
       ],
@@ -215,8 +235,15 @@
         d.bio_fin = 'SIN MÁS VICISITUDES FINALIZA EL AÑO COMO ' + (pf || '…');
         if (!pi && !d.bio_inicio_libre) av.push({ tipo: 'falta', txt: 'Falta el puesto táctico.' });
         if (!d.jefe_unidad) av.push({ tipo: 'falta', txt: 'Falta el nombre del jefe de la unidad (Ajustes).' });
-        const usadas = d.bio.filter(r => r.fecha || r.texto).length;
-        if (!larga && usadas >= filas) av.push({ tipo: 'info', txt: '¿Más vicisitudes? Usa la versión larga (18 filas).' });
+        const fuera = new Set(d.ejercicios_fuera || []);
+        const ejercicios = ejerciciosDe(d.ejercicios).filter(e => !fuera.has(e.clave)).map(e => ({ fecha: e.fecha, texto: e.texto }));
+        const propias = d.bio.filter(r => r.fecha || r.texto);
+        // orden cronológico estable (lo que no tenga fecha reconocible va al final, en su orden)
+        d.bio = [...ejercicios, ...propias].map((r, i) => [claveFecha(r.fecha), i, r]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]);
+        const n = d.bio.length;
+        if (n > filas) av.push({ tipo: 'error', txt: `Hay ${n} vicisitudes y en la ${larga ? 'larga' : 'corta'} caben ${filas}. ${larga ? 'Quita alguna o agrupa varias en una fila.' : 'Pasa a la versión larga (no se pierde nada).'}`, enlace: larga ? null : '#/s1/' + otra, textoEnlace: 'Pasar a la larga' });
+        else av.push({ tipo: 'info', txt: `${n} de ${filas} filas biográficas usadas.` + (!larga ? '' : n <= 7 ? ' Cabe en la versión corta (1 hoja).' : ''), enlace: larga && n <= 7 ? '#/s1/' + otra : null, textoEnlace: 'Pasar a la corta' });
+        d._filas_bio = filas;
       },
     });
   }

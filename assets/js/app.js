@@ -242,7 +242,8 @@
     if (c.persona && p && p[c.id]) return p[c.id];
     return typeof c.def === 'function' ? c.def(a, p || {}) : (c.def ?? '');
   }
-  function personaDe(def) { return S.personaDoc[def.id] || (S.personaDoc[def.id] = vaciaPersona()); }
+  const clave = def => def.estado || def.id; // documentos que comparten lo rellenado (hoja anual corta/larga)
+  function personaDe(def) { return S.personaDoc[clave(def)] || (S.personaDoc[clave(def)] = vaciaPersona()); }
   function vaciaPersona() { return { trat: 'D.', nombre: '', apellidos: '', empleo: '', empleo_abrev: '', dni: '', escala: '', cia: '', telefono: '', domicilio: '', email: '' }; }
   function completarPersona(p) {
     if (p.nombre || p.apellidos) {
@@ -287,7 +288,8 @@
     for (const t of def.tablas || []) {
       if (!def.calcular) d[t.id] = d[t.id].filter(r => Object.values(r).some(Boolean));
       while (d[t.id].length < (t.filas || 0)) d[t.id].push({});
-      if (t.max && d[t.id].length > t.max) av.push({ tipo: 'error', txt: `${t.et}: caben ${t.max} filas en la hoja.` });
+      const escritas = (tablas[t.id] || []).filter(r => Object.values(r).some(Boolean)).length;
+      if (t.max && escritas > t.max) av.push({ tipo: 'error', txt: `${t.et}: caben ${t.max} filas en la hoja.` });
     }
     for (const c of camposDe(def)) {
       if (!c.oblig || (c.visible && !c.visible(d))) continue;
@@ -309,6 +311,14 @@
     else if (c.tipo === 'fecha') control = `<input id="${id}" data-campo="${c.id}" type="date" value="${esc(C.iso(C.aFecha(valor)))}">`;
     else if (c.tipo === 'numero') control = `<input id="${id}" data-campo="${c.id}" type="number" inputmode="numeric" min="0" value="${esc(valor)}"${ph}>`;
     else if (c.tipo === 'calculado') control = `<input id="${id}" data-calc="${c.id}" readonly tabindex="-1" value="">`;
+    else if (c.tipo === 'checklist') {
+      const fuera = new Set(Array.isArray(valor) ? valor : []);
+      const ops = (typeof c.opciones === 'function' ? c.opciones(S.ajustes) : c.opciones) || [];
+      const n = ops.filter(o => !fuera.has(o.v)).length;
+      control = ops.length ? `<div class="checklist" role="group" aria-label="${esc(c.et)}">${ops.map(o => `<label><input type="checkbox" data-check="${c.id}" value="${esc(o.v)}" ${fuera.has(o.v) ? '' : 'checked'}><span class="ck-fecha">${esc(o.sub || '')}</span><span class="ck-texto">${esc(o.et)}</span></label>`).join('')}</div>
+        <div class="checklist-pie"><span data-ckcuenta="${c.id}">${n} de ${ops.length} marcados</span><span><button type="button" class="enlace" data-cktodos="${c.id}">Todos</button> · <button type="button" class="enlace" data-ckninguno="${c.id}">Ninguno</button> · <a class="enlace" href="#/ajustes">Editar lista</a></span></div>`
+        : `<div class="vacio" style="padding:14px">No hay ejercicios en la lista. <a class="enlace" href="#/ajustes">Añádelos en Ajustes</a>.</div>`;
+    }
     else if (c.tipo === 'radio') control = `<div class="radios" role="radiogroup" aria-label="${esc(c.et)}">${c.opciones.map(o => `<label><input type="radio" name="${id}" data-campo="${c.id}" value="${esc(o.v)}" ${String(valor) === o.v ? 'checked' : ''}>${esc(o.et)}</label>`).join('')}</div>`;
     else if (c.tipo === 'opciones' && c.libre) control = `<input id="${id}" data-campo="${c.id}" list="${id}_l" value="${esc(valor)}" autocomplete="off"${ph}><datalist id="${id}_l">${c.opciones.map(o => `<option value="${esc(o)}">`).join('')}</datalist>`;
     else if (c.tipo === 'opciones') control = `<select id="${id}" data-campo="${c.id}">${['', ...c.opciones].map(o => `<option ${String(valor) === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
@@ -316,7 +326,7 @@
       const sug = c.sugerencias ? ` list="${id}_l"` : '';
       control = `<input id="${id}" data-campo="${c.id}" value="${esc(valor)}" autocomplete="off"${sug}${ph}>${c.sugerencias ? `<datalist id="${id}_l">${c.sugerencias.map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : ''}`;
     }
-    const etq = c.tipo === 'radio' ? `<span class="etq">${esc(c.et)}${req}</span>` : `<label for="${id}">${esc(c.et)}${req}</label>`;
+    const etq = (c.tipo === 'radio' || c.tipo === 'checklist') ? `<span class="etq">${esc(c.et)}${req}</span>` : `<label for="${id}">${esc(c.et)}${req}</label>`;
     return `<div class="campo${ancho}" data-c="${c.id}"${vis}>${etq}${control}${ayuda}</div>`;
   }
 
@@ -336,10 +346,10 @@
 
   async function vistaEditor(def) {
     const tags = await etiquetasDe(def);
-    const modo = S.modo[def.id] || 'una';
-    const valores = S.valores[def.id] || (S.valores[def.id] = {});
-    const tablas = S.tablas[def.id] || (S.tablas[def.id] = {});
-    for (const t of def.tablas || []) if (!tablas[t.id]) tablas[t.id] = Array.from({ length: Math.min(t.max || 3, 3) }, () => ({}));
+    const modo = S.modo[clave(def)] || 'una';
+    const valores = S.valores[clave(def)] || (S.valores[clave(def)] = {});
+    const tablas = S.tablas[clave(def)] || (S.tablas[clave(def)] = {});
+    for (const t of def.tablas || []) if (!tablas[t.id]) tablas[t.id] = Array.from({ length: t.inicio ?? Math.min(t.max || 3, 3) }, () => ({}));
     const sec = SECCIONES[def.seccion];
     pintar(`<div class="editor">
       <aside class="panel" aria-label="Datos del documento">
@@ -384,14 +394,14 @@
   }
 
   function pintarPersona(ctx) {
-    const { def, tags } = ctx; const modo = S.modo[def.id] || 'una';
+    const { def, tags } = ctx; const modo = S.modo[clave(def)] || 'una';
     const cont = $('#sec-persona');
     if (modo === 'varias') {
       if (!S.personas.length) {
         cont.innerHTML = `<h2><span class="n">1</span>Personas</h2><div class="vacio" style="padding:18px"><strong style="font-size:19px">Necesitas el Excel</strong>Para sacar el documento de muchas personas a la vez, carga primero el Excel de personal.<br><br><button class="btn principal peq" type="button" data-acc2="cargar">Cargar Excel</button> <button class="enlace" data-acc2="ficticios">o datos inventados</button></div>`;
         return;
       }
-      const sel = S.lote[def.id] || (S.lote[def.id] = new Set());
+      const sel = S.lote[clave(def)] || (S.lote[clave(def)] = new Set());
       const cias = [...new Set(S.personas.map(p => p.cia).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
       const emps = [...new Set(S.personas.map(p => p.empleo_abrev || p.empleo).filter(Boolean))];
       cont.innerHTML = `<h2><span class="n">1</span>Personas</h2>
@@ -445,7 +455,7 @@
       lista.classList.remove('oculto'); inp.setAttribute('aria-expanded', 'true');
       if (res.length) inp.setAttribute('aria-activedescendant', 'op-' + act);
     };
-    const elegir = x => { S.personaDoc[def.id] = copiaPersona(x); limpiarValoresPersona(ctx); cerrar(); pintarPersona(ctx); pintarCampos(ctx); programar(ctx, 0); toast(`${x.apellidos_nombre}: datos cargados.`); };
+    const elegir = x => { S.personaDoc[clave(def)] = copiaPersona(x); limpiarValoresPersona(ctx); cerrar(); pintarPersona(ctx); pintarCampos(ctx); programar(ctx, 0); toast(`${x.apellidos_nombre}: datos cargados.`); };
     inp.addEventListener('input', () => { res = C.buscarPersonas(S.personas, inp.value); act = 0; if (inp.value.trim()) pintar(); else cerrar(); });
     inp.addEventListener('keydown', e => {
       if (lista.classList.contains('oculto')) return;
@@ -461,7 +471,7 @@
       const pp = personaDe(def); pp[k] = e.target.value; completarPersona(pp); programar(ctx);
     });
     cont._enlazado = true;
-    const q = $('#limpiar-persona'); if (q) q.addEventListener('click', () => { S.personaDoc[def.id] = vaciaPersona(); limpiarValoresPersona(ctx); pintarPersona(ctx); pintarCampos(ctx); programar(ctx, 0); });
+    const q = $('#limpiar-persona'); if (q) q.addEventListener('click', () => { S.personaDoc[clave(def)] = vaciaPersona(); limpiarValoresPersona(ctx); pintarPersona(ctx); pintarCampos(ctx); programar(ctx, 0); });
     if (S.personas.length && !p.nombre) setTimeout(() => inp.focus(), 50);
   }
   // al cambiar de persona, los campos que dependen de ella vuelven a su valor por defecto
@@ -492,7 +502,7 @@
     const panel = $('.panel');
     panel.addEventListener('click', e => {
       const m = e.target.closest('[data-modo]');
-      if (m) { S.modo[def.id] = m.dataset.modo; $$('[data-modo]').forEach(b => b.setAttribute('aria-pressed', String(b === m))); pintarPersona(ctx); pintarAcciones(ctx); programar(ctx, 0); return; }
+      if (m) { S.modo[clave(def)] = m.dataset.modo; $$('[data-modo]').forEach(b => b.setAttribute('aria-pressed', String(b === m))); pintarPersona(ctx); pintarAcciones(ctx); programar(ctx, 0); return; }
       const a2 = e.target.closest('[data-acc2]');
       if (a2) { a2.dataset.acc2 === 'cargar' ? $('#archivo-excel').click() : datosFicticios(); return; }
       const an = e.target.closest('[data-anadir]');
@@ -500,8 +510,21 @@
       const q = e.target.closest('[data-quitar]');
       if (q) { const [tid, i] = q.dataset.quitar.split(':'); const t = def.tablas.find(x => x.id === tid); tablas[tid].splice(+i, 1); if (!tablas[tid].length) tablas[tid].push({}); $(`[data-tabla="${tid}"]`).innerHTML = htmlTabla(t, tablas[tid]); programar(ctx); }
     });
+    const contarCheck = id => {
+      const total = $$(`[data-check="${id}"]`).length, n = $$(`[data-check="${id}"]:checked`).length;
+      const c = $(`[data-ckcuenta="${id}"]`); if (c) c.textContent = `${n} de ${total} marcados`;
+      valores[id] = $$(`[data-check="${id}"]:not(:checked)`).map(x => x.value);
+      programar(ctx);
+    };
+    panel.addEventListener('click', e => {
+      const t = e.target.closest('[data-cktodos],[data-ckninguno]'); if (!t) return;
+      const id = t.dataset.cktodos || t.dataset.ckninguno;
+      $$(`[data-check="${id}"]`).forEach(x => { x.checked = !!t.dataset.cktodos; });
+      contarCheck(id);
+    });
     const alCambiar = e => {
       const el = e.target;
+      if (el.dataset.check) { if (e.type === 'change') contarCheck(el.dataset.check); return; }
       if (el.dataset.campo) {
         valores[el.dataset.campo] = el.value;
         if (el.type === 'radio' || el.tagName === 'SELECT') visibilidad(ctx);
@@ -527,8 +550,8 @@
   }
 
   function pintarAcciones(ctx) {
-    const modo = S.modo[ctx.def.id] || 'una';
-    const n = (S.lote[ctx.def.id] || new Set()).size;
+    const modo = S.modo[clave(ctx.def)] || 'una';
+    const n = (S.lote[clave(ctx.def)] || new Set()).size;
     $('#acciones').innerHTML = modo === 'varias'
       ? `<button class="btn suave" data-exp="zip" ${n ? '' : 'disabled'}>${ico.zip}Word (${n}) en ZIP</button><button class="btn principal" data-exp="pdf-lote" ${n ? '' : 'disabled'}>${ico.pdf}Un PDF con ${n}</button>`
       : `<button class="btn suave" data-exp="word">${ico.word}Word</button><button class="btn suave" data-exp="imprimir">${ico.imprimir}Imprimir</button><button class="btn principal" data-exp="pdf">${ico.pdf}PDF</button>`;
@@ -541,8 +564,8 @@
     clearTimeout(temporizador); temporizador = setTimeout(() => actualizar(ctx), ms);
   }
   function personaVista(ctx) {
-    const modo = S.modo[ctx.def.id] || 'una';
-    if (modo === 'varias') { const sel = [...(S.lote[ctx.def.id] || [])]; return sel.length ? copiaPersona(S.personas[sel[0]]) : null; }
+    const modo = S.modo[clave(ctx.def)] || 'una';
+    if (modo === 'varias') { const sel = [...(S.lote[clave(ctx.def)] || [])]; return sel.length ? copiaPersona(S.personas[sel[0]]) : null; }
     return personaDe(ctx.def);
   }
   let contador = 0;
@@ -570,6 +593,7 @@
     return out;
   }
   async function actualizar(ctx) {
+    if (!$('#avisos') || !$('#hojas')) return; // se ha cambiado de página
     const { def } = ctx; const v = ++S.version;
     const persona = personaVista(ctx);
     const { d, av } = construirDatos(def, persona, ctx.valores, ctx.tablas);
@@ -590,7 +614,8 @@
       const nPag = hojas.querySelectorAll('section.hoja-docx').length;
       $('#luz').classList.remove('cargando');
       const faltan = av.filter(a => a.tipo === 'falta' || a.tipo === 'error').length;
-      const modo = S.modo[def.id] || 'una';
+      const modo = S.modo[clave(def)] || 'una';
+      if (!$('#estado-texto')) return;
       $('#estado-texto').innerHTML = (modo === 'varias' ? `Vista de la 1.ª persona · ` : '') + `<b>${nPag} ${nPag === 1 ? 'hoja' : 'hojas'} A4</b> · ` + (faltan ? `${faltan} ${faltan === 1 ? 'cosa' : 'cosas'} por revisar` : 'listo para exportar');
     } catch (e) {
       console.error(e); $('#estado-texto').textContent = 'Error al generar: ' + e.message; $('#luz').classList.remove('cargando');
@@ -603,7 +628,7 @@
     const orden = { error: 0, falta: 1, aviso: 2, info: 3 };
     const l = [...av].sort((a, b) => orden[a.tipo] - orden[b.tipo]);
     if (!l.some(a => a.tipo === 'error' || a.tipo === 'falta')) l.unshift({ tipo: 'ok', txt: 'Todo relleno. Revisa la hoja de la derecha y exporta.' });
-    $('#avisos').innerHTML = l.map(a => `<div class="aviso av-${a.tipo}">${esc(a.txt)}</div>`).join('');
+    $('#avisos').innerHTML = l.map(a => `<div class="aviso av-${a.tipo}"><span>${esc(a.txt)}${a.enlace ? ` <a class="enlace" href="${esc(a.enlace)}">${esc(a.textoEnlace || 'Ir')}</a>` : ''}</span></div>`).join('');
   }
   function escalaAjuste() {
     const vista = $('.vista'); const s = $('#hojas section.hoja-docx'); if (!vista || !s) return 1;
@@ -647,7 +672,7 @@
         imprimirPdf(pdf);
         return;
       }
-      const sel = [...(S.lote[def.id] || [])].map(i => S.personas[i]);
+      const sel = [...(S.lote[clave(def)] || [])].map(i => S.personas[i]);
       if (!sel.length) return;
       if (tipo === 'zip') {
         const zip = new JSZip(); const usados = new Set();
@@ -697,7 +722,7 @@
       <div class="miga"><a href="#/">Inicio</a> / <span>Datos de la unidad</span></div>
       <h1 class="titular" style="margin-top:12px">Datos de la <i>unidad</i></h1>
       <p class="texto-gris" style="max-width:62ch">Se escriben una vez y salen en todos los documentos. Se guardan solo en este navegador (no son datos personales). Si cambia el jefe de la unidad o el destinatario, se cambia aquí.</p>
-      ${Object.entries(grupos).map(([g, l]) => `<div class="tarjeta"><h2>${esc(g)}</h2><div class="campos" style="margin-top:12px">${l.map(d => `<div class="campo"><label for="a_${d.k}">${esc(d.et)}</label><input id="a_${d.k}" data-aj="${d.k}" value="${esc(a[d.k])}" placeholder="${esc(d.v)}"></div>`).join('')}</div></div>`).join('')}
+      ${Object.entries(grupos).map(([g, l]) => `<div class="tarjeta"><h2>${esc(g)}</h2><div class="campos" style="margin-top:12px">${l.map(d => `<div class="campo"><label for="a_${d.k}">${esc(d.et)}</label>${d.tipo === 'area' ? `<textarea id="a_${d.k}" data-aj="${d.k}" rows="${Math.max(6, String(a[d.k]).split('\n').length + 1)}" style="font:13px/1.6 var(--mono)">${esc(a[d.k])}</textarea><span class="ayuda">Cada año: cambia o añade líneas. El texto antes de la barra «|» va en la columna FECHA.</span>` : `<input id="a_${d.k}" data-aj="${d.k}" value="${esc(a[d.k])}" placeholder="${esc(d.v)}">`}</div>`).join('')}</div></div>`).join('')}
       <div class="tarjeta"><h2>Restablecer</h2><p class="texto-gris">Vuelve a los valores de fábrica (RIPAC 4).</p><button class="btn suave" id="reset-aj">Restablecer valores</button></div>
     </div></section>`);
     let t;
@@ -784,6 +809,7 @@
 
   // ======================================================================= rutas
   function router() {
+    clearTimeout(temporizador); S.version++;
     const h = location.hash.replace(/^#\/?/, '');
     const [a, b] = h.split('/');
     $$('.secciones-nav a').forEach(x => x.classList.toggle('activa', x.dataset.sec === a));
