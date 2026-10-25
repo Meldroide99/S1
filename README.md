@@ -57,4 +57,4 @@ Huecos: `{campo}` tal cual · `{CAMPO}` en mayúsculas · `{Campo}` tipo título
 
 ## Librerías incluidas
 
-[docx-preview](https://github.com/VolodymyrBaydalka/docxjs) (Apache 2.0), [JSZip](https://stuk.github.io/jszip/) (MIT), [pdf-lib](https://pdf-lib.js.org/) (MIT), fuentes Manrope y Cormorant Garamond (OFL).
+[docx-preview](https://github.com/VolodymyrBaydalka/docxjs) (Apache 2.0), [JSZip](https://stuk.github.io/jszip/) (MIT), [pdf-lib](https://pdf-lib.js.org/) (MIT), fuentes Manrope y EB Garamond (OFL).
