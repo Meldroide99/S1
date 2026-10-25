@@ -57,7 +57,7 @@
   function abreviar(empleo) { const n = empleoNorm(empleo); const e = EMPLEOS.find(x => x[0] === n); return e ? e[1] : ''; }
   function desabreviar(ab) {
     const n = norm(ab).replace(/\s/g, '');
-    const alias = { SGT: 'SGTO', SG: 'SGTO', SGTO1: 'SG1', SG1O: 'SG1', BRIG: 'BG', CB: 'CBO', CABO1: 'CB1', CB1O: 'CB1', TCOR: 'TCOL', TCNEL: 'TCOL', CORONEL: 'COL', CTE: 'CTE', CMTE: 'CTE', CAP: 'CAP', CAPT: 'CAP', TTE: 'TTE', TENIENTE: 'TTE', SOLD: 'SDO', SOL: 'SDO' };
+    const alias = { SGT: 'SGTO', SG: 'SGTO', SARG: 'SGTO', SGTO1: 'SG1', SGTO1O: 'SG1', SG1O: 'SG1', SGT1: 'SG1', BRIG: 'BG', BRG: 'BG', CB: 'CBO', CAB: 'CBO', CABO1: 'CB1', CB1O: 'CB1', CBO1: 'CB1', CBO1O: 'CB1', CBMY: 'CBM', CBOMY: 'CBM', SBM: 'SBMY', SUBMY: 'SBMY', ST: 'STTE', SBTTE: 'STTE', TCOR: 'TCOL', TCNEL: 'TCOL', TCORONEL: 'TCOL', CORONEL: 'COL', CMTE: 'CTE', COM: 'CTE', CAPT: 'CAP', CPT: 'CAP', TENIENTE: 'TTE', TTE1: 'TTE', ALFZ: 'ALF', SOLD: 'SDO', SOL: 'SDO', SD: 'SDO', SDO1: 'SDO1', SDO1O: 'SDO1' };
     const k = alias[n] || n; const e = EMPLEOS.find(x => x[1] === k);
     return e ? (BONITO[e[0]] || e[0]) : '';
   }
@@ -110,7 +110,14 @@
     if (!p.apellidos_nombre) p.apellidos_nombre = [p.apellidos, p.nombre].filter(Boolean).join(', ');
     p.nombre_completo = [p.nombre, p.apellidos].filter(Boolean).join(' ') || p.apellidos_nombre;
     if (!p.empleo && p.empleo_abrev) p.empleo = desabreviar(p.empleo_abrev) || p.empleo_abrev;
-    if (p.empleo) { const n = empleoNorm(p.empleo); if (BONITO[n] && norm(p.empleo) !== norm(BONITO[n])) p.empleo = BONITO[n]; }
+    // si la columna EMPLEO trae la abreviatura (SDO, CBO, SG1...), se escribe completo en los documentos
+    if (p.empleo && !abreviar(p.empleo) && desabreviar(p.empleo)) {
+      if (!p.empleo_abrev) p.empleo_abrev = p.empleo.toUpperCase();
+      p.empleo = desabreviar(p.empleo);
+    }
+    // y si la abreviada trae el empleo completo, al revés
+    if (p.empleo_abrev && abreviar(p.empleo_abrev)) p.empleo_abrev = abreviar(p.empleo_abrev);
+    if (p.empleo) { const n = empleoNorm(p.empleo); if (BONITO[n] && p.empleo !== BONITO[n]) p.empleo = BONITO[n]; }
     if (!p.empleo_abrev && p.empleo) p.empleo_abrev = abreviar(p.empleo);
     p.dni = p.dni.replace(/\s+/g, '').toUpperCase();
     const sx = norm(p.sexo);
