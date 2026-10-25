@@ -608,15 +608,19 @@ def hoja_anual(larga):
     if larga:
         salto_pagina(d)
     parrafo(d, [('3.- RESUMEN DE LOS MANDOS EJERCIDOS DURANTE EL AÑO.', 'bu')], antes=12, despues=6, tam=10)
-    anchos = [2.4, 3.8] + [1.8, 1.8] * 3
-    t = tabla(d, 4, anchos, alto=0.48)
-    a = t.cell(0, 0).merge(t.cell(2, 0)); texto_celda(a, 'Empleo', tam=9)
-    b = t.cell(0, 1).merge(t.cell(2, 1)); texto_celda(b, 'Tipo de Unidad', tam=9)
-    tm = t.cell(0, 2).merge(t.cell(0, 7)); texto_celda(tm, 'Tipo de Mando', tam=9)
-    for k, nom in enumerate(['Titular', 'Interino', 'Acctal.']):
-        c = t.cell(1, 2 + 2 * k).merge(t.cell(1, 3 + 2 * k)); texto_celda(c, nom, tam=9)
-        texto_celda(t.cell(2, 2 + 2 * k), 'Inicio', tam=9)
-        texto_celda(t.cell(2, 3 + 2 * k), 'Fin', tam=9)
+    # Empleo y unidad más anchos; las 6 fechas iguales (caben dd/mm/aa holgadas).
+    # Cabeceras en negrita y filas a la misma altura que los datos biográficos.
+    anchos = [2.2, 4.0] + [1.8, 1.8] * 3
+    t = tabla(d, 4, anchos, alto=0.56)
+    for r in range(3):
+        t.rows[r].height = Cm(0.5)
+    a = t.cell(0, 0).merge(t.cell(2, 0)); texto_celda(a, [('EMPLEO', 'b')], tam=8.5)
+    b = t.cell(0, 1).merge(t.cell(2, 1)); texto_celda(b, [('TIPO DE UNIDAD', 'b')], tam=8.5)
+    tm = t.cell(0, 2).merge(t.cell(0, 7)); texto_celda(tm, [('TIPO DE MANDO', 'b')], tam=8.5)
+    for k, nom in enumerate(['TITULAR', 'INTERINO', 'ACCTAL.']):
+        c = t.cell(1, 2 + 2 * k).merge(t.cell(1, 3 + 2 * k)); texto_celda(c, [(nom, 'b')], tam=8)
+        texto_celda(t.cell(2, 2 + 2 * k), 'Inicio', tam=8)
+        texto_celda(t.cell(2, 3 + 2 * k), 'Fin', tam=8)
     for r in range(3):
         cabecera_tabla(t.rows[r])
     campos = ['{#mandos}{EMPLEO_M}', '{UNIDAD_M}', '{ti}', '{tf}', '{ii}', '{if}', '{ai}', '{af}{/mandos}']
@@ -626,7 +630,7 @@ def hoja_anual(larga):
     # firmas: dos columnas, sin bordes
     f = tabla(d, 1, [8.5, 8.5], bordes=False)
     texto_celda(f.cell(0, 0), 'CERTIFICO LA VERACIDAD DE LOS DATOS\nEXPUESTOS POR EL INTERESADO.\n'
-                              '{localidad_firma}, {fecha_jefe_larga}\nEL JEFE DE LA UNIDAD\n\n\n\n{jefe_unidad}',
+                              '{localidad_firma}, {fecha_jefe_larga}\nEL JEFE DE LA UNIDAD\n\n\n\n{JEFE_UNIDAD}',
                 tam=9.5, interlineado=1.1)
     texto_celda(f.cell(0, 1), '\n\n{localidad_firma}, {fecha_interesado_larga}\nEL INTERESADO\n\n\n\n'
                               '{Trat} {NOMBRE_COMPLETO}', tam=9.5, interlineado=1.1)

@@ -153,7 +153,7 @@
     { k: 'localidad', et: 'Término municipal', v: 'Paracuellos de Jarama', grupo: 'Unidad' },
     { k: 'provincia', et: 'Provincia', v: 'Madrid', grupo: 'Unidad' },
     { k: 'localidad_firma', et: 'Lugar de firma de los escritos', v: 'Paracuellos de Jarama', grupo: 'Firma' },
-    { k: 'jefe_unidad', et: 'Jefe de la unidad (empleo y nombre, para la hoja anual)', v: '', grupo: 'Firma' },
+    { k: 'jefe_unidad', et: 'Jefe de la unidad (para la hoja anual)', v: 'D. Javier Arrabal Flores', grupo: 'Firma' },
     { k: 'ejercicios', et: 'Ejercicios del año (uno por línea: FECHA | EJERCICIO)', tipo: 'area', grupo: 'Hoja anual', v: [
       '7FEB-8MAR | STEADFAST DART 2026',
       '10-16ABR | GGAA “LAURIA PARACA II/26”',
@@ -180,7 +180,8 @@
   function guardarLocal(clave, v) { try { localStorage.setItem(clave, JSON.stringify(v)); return true; } catch (e) { return false; } }
   function ajustes() {
     const guard = leerLocal(CLAVE_AJUSTES, {});
-    const a = {}; for (const d of AJUSTES_DEF) a[d.k] = guard[d.k] !== undefined ? guard[d.k] : d.v;
+    // un ajuste guardado vacío vuelve al valor por defecto (si no, el valor nuevo nunca llegaría)
+    const a = {}; for (const d of AJUSTES_DEF) a[d.k] = guard[d.k] !== undefined && guard[d.k] !== '' ? guard[d.k] : d.v;
     return a;
   }
   const guardarAjustes = a => guardarLocal(CLAVE_AJUSTES, a);

@@ -225,7 +225,11 @@
         { id: 'bio', et: 'Otras vicisitudes (cursos, comisiones, bajas…)', filas, max: filas, inicio: 1, ayuda: 'Se mezclan con los ejercicios y se ordenan por fecha.',
           columnas: [T('fecha', 'Fecha', { ph: '7-11SEP' }), T('texto', 'Información biográfica', { ph: 'CURSO BÁSICO PARACAIDISTA' })] },
         { id: 'mandos', et: 'Mandos ejercidos', filas: mandos, max: mandos,
-          columnas: [T('empleo_m', 'Empleo'), T('unidad_m', 'Tipo de unidad'), T('ti', 'Tit. inicio'), T('tf', 'Tit. fin'), T('ii', 'Int. inicio'), T('if', 'Int. fin'), T('ai', 'Acc. inicio'), T('af', 'Acc. fin')] },
+          fichas: 'Mando', // demasiadas columnas para una tabla en el panel: una ficha por mando
+          columnas: [T('empleo_m', 'Empleo', { ph: 'CBO' }), T('unidad_m', 'Tipo de unidad', { ph: 'PELOTÓN' }),
+            F('ti', 'Inicio', { grupo: 'Titular' }), F('tf', 'Fin', { grupo: 'Titular' }),
+            F('ii', 'Inicio', { grupo: 'Interino' }), F('if', 'Fin', { grupo: 'Interino' }),
+            F('ai', 'Inicio', { grupo: 'Accidental' }), F('af', 'Fin', { grupo: 'Accidental' })] },
       ],
       calcular(d, av) {
         d.x_correcto = d.datos_admin === 'correcto' ? 'X' : '';
@@ -243,6 +247,8 @@
         const n = d.bio.length;
         if (n > filas) av.push({ tipo: 'error', txt: `Hay ${n} vicisitudes y en la ${larga ? 'larga' : 'corta'} caben ${filas}. ${larga ? 'Quita alguna o agrupa varias en una fila.' : 'Pasa a la versión larga (no se pierde nada).'}`, enlace: larga ? null : '#/s1/' + otra, textoEnlace: 'Pasar a la larga' });
         else av.push({ tipo: 'info', txt: `${n} de ${filas} filas biográficas usadas.` + (!larga ? '' : n <= 7 ? ' Cabe en la versión corta (1 hoja).' : ''), enlace: larga && n <= 7 ? '#/s1/' + otra : null, textoEnlace: 'Pasar a la corta' });
+        // fechas de mandos en dd/mm/aa: caben en su casilla sin partirse
+        d.mandos = d.mandos.map(m => { const o = { ...m }; for (const k of ['ti', 'tf', 'ii', 'if', 'ai', 'af']) o[k] = String(o[k] || '').replace(/^(\d{2}\/\d{2}\/)\d{2}(\d{2})$/, '$1$2'); return o; });
         d._filas_bio = filas;
       },
     });

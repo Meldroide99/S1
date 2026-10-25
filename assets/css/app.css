@@ -319,3 +319,17 @@ section.docx > footer { display: flex; flex-direction: column; justify-content: 
 .checklist label:has(input:not(:checked)) .ck-texto, .checklist label:has(input:not(:checked)) .ck-fecha { color: var(--gris-2); text-decoration: line-through; }
 .checklist-pie { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--gris); padding-top: 6px; }
 .aviso a.enlace { margin-left: 4px; white-space: nowrap; }
+
+/* fichas (tablas con muchas columnas, p. ej. mandos ejercidos) */
+.ficha-fila { border: 1px solid var(--linea); border-radius: 6px; background: #fff; padding: 10px 12px 12px; margin-bottom: 10px; }
+.ficha-fila-cab { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--oro-tinta); margin-bottom: 8px; }
+.ficha-fila-cab button { border: 0; background: none; color: var(--gris-2); cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 3px; }
+.ficha-fila-cab button:hover { color: var(--error); background: var(--error-suave); }
+.ficha-grupos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.ficha-grupos fieldset { border: 1px solid var(--linea); border-radius: 4px; margin: 0; padding: 4px 8px 8px; min-width: 0; background: var(--papel); }
+.ficha-grupos legend { font-size: 11px; font-weight: 700; color: var(--tinta-2); padding: 0 4px; }
+.ficha-grupos label { display: block; font-size: 10.5px; color: var(--gris); margin-top: 4px; }
+.ficha-grupos label span { display: block; margin-bottom: 2px; }
+.ficha-grupos input { width: 100%; min-width: 0; border: 1px solid var(--linea-2); border-radius: 3px; padding: 5px 4px; font-size: 12px; background: #fff; }
+.ficha-grupos input:focus { outline: none; border-color: var(--oro); box-shadow: 0 0 0 2px var(--oro-suave); }
+@media (max-width: 560px) { .ficha-grupos { grid-template-columns: 1fr; } }

@@ -330,7 +330,25 @@
     return `<div class="campo${ancho}" data-c="${c.id}"${vis}>${etq}${control}${ayuda}</div>`;
   }
 
+  /* Tablas con muchas columnas (p. ej. mandos): una ficha por fila, con las columnas agrupadas. */
+  function htmlFichas(t, filas) {
+    const input = (c, r, i) => {
+      const v = r[c.id] ?? '';
+      const comun = `data-t="${t.id}" data-f="${i}" data-k="${c.id}" aria-label="${esc((c.grupo ? c.grupo + ' ' : '') + c.et)} ${i + 1}"`;
+      return c.tipo === 'fecha' ? `<input type="date" ${comun} value="${esc(C.iso(C.aFecha(v)))}">` : `<input ${comun} value="${esc(v)}" placeholder="${esc(c.ph || '')}">`;
+    };
+    const sueltas = t.columnas.filter(c => !c.grupo);
+    const grupos = []; for (const c of t.columnas) if (c.grupo && !grupos.includes(c.grupo)) grupos.push(c.grupo);
+    const html = filas.map((r, i) => `<div class="ficha-fila">
+      <div class="ficha-fila-cab"><span>${esc(t.fichas)} ${i + 1}</span><button type="button" data-quitar="${t.id}:${i}" title="Quitar" aria-label="Quitar ${esc(t.fichas)} ${i + 1}">×</button></div>
+      <div class="campos">${sueltas.map(c => `<div class="campo medio"><label>${esc(c.et)}</label>${input(c, r, i)}</div>`).join('')}</div>
+      <div class="ficha-grupos">${grupos.map(g => `<fieldset><legend>${esc(g)}</legend>${t.columnas.filter(c => c.grupo === g).map(c => `<label><span>${esc(c.et)}</span>${input(c, r, i)}</label>`).join('')}</fieldset>`).join('')}</div>
+    </div>`).join('');
+    return html + `<div class="tabla-pie"><span>${filas.length} de ${t.max || '∞'}${t.ayuda ? ' · ' + esc(t.ayuda) : ''}</span>${!t.max || filas.length < t.max ? `<button class="btn suave peq" type="button" data-anadir="${t.id}">+ Añadir ${esc(t.fichas.toLowerCase())}</button>` : ''}</div>`;
+  }
+
   function htmlTabla(t, filas) {
+    if (t.fichas) return htmlFichas(t, filas);
     const cab = t.columnas.map(c => `<th>${esc(c.et)}</th>`).join('');
     const cuerpo = filas.map((r, i) => `<tr><td class="idx">${i + 1}</td>${t.columnas.map(c => {
       if (c.tipo === 'calculado') return `<td class="calc" data-calcfila="${c.id}">${esc(c.calc ? c.calc(r) : '')}</td>`;
@@ -349,7 +367,7 @@
     const modo = S.modo[clave(def)] || 'una';
     const valores = S.valores[clave(def)] || (S.valores[clave(def)] = {});
     const tablas = S.tablas[clave(def)] || (S.tablas[clave(def)] = {});
-    for (const t of def.tablas || []) if (!tablas[t.id]) tablas[t.id] = Array.from({ length: t.inicio ?? Math.min(t.max || 3, 3) }, () => ({}));
+    for (const t of def.tablas || []) if (!tablas[t.id]) tablas[t.id] = Array.from({ length: t.inicio ?? (t.fichas ? 1 : Math.min(t.max || 3, 3)) }, () => ({}));
     const sec = SECCIONES[def.seccion];
     pintar(`<div class="editor">
       <aside class="panel" aria-label="Datos del documento">
@@ -506,7 +524,7 @@
       const a2 = e.target.closest('[data-acc2]');
       if (a2) { a2.dataset.acc2 === 'cargar' ? $('#archivo-excel').click() : datosFicticios(); return; }
       const an = e.target.closest('[data-anadir]');
-      if (an) { const t = def.tablas.find(x => x.id === an.dataset.anadir); tablas[t.id].push({}); $(`[data-tabla="${t.id}"]`).innerHTML = htmlTabla(t, tablas[t.id]); const ins = $$(`[data-tabla="${t.id}"] tbody tr:last-child input`); if (ins[0]) ins[0].focus(); return; }
+      if (an) { const t = def.tablas.find(x => x.id === an.dataset.anadir); tablas[t.id].push({}); $(`[data-tabla="${t.id}"]`).innerHTML = htmlTabla(t, tablas[t.id]); const ins = $$(`[data-tabla="${t.id}"] tbody tr:last-child input, [data-tabla="${t.id}"] .ficha-fila:last-of-type input`); if (ins[0]) ins[0].focus(); return; }
       const q = e.target.closest('[data-quitar]');
       if (q) { const [tid, i] = q.dataset.quitar.split(':'); const t = def.tablas.find(x => x.id === tid); tablas[tid].splice(+i, 1); if (!tablas[tid].length) tablas[tid].push({}); $(`[data-tabla="${tid}"]`).innerHTML = htmlTabla(t, tablas[tid]); programar(ctx); }
     });
@@ -534,7 +552,7 @@
         const r = tablas[el.dataset.t][+el.dataset.f]; r[el.dataset.k] = el.value;
         const t = def.tablas.find(x => x.id === el.dataset.t);
         const tr = el.closest('tr');
-        for (const col of t.columnas) if (col.calc) { const td = tr.querySelector(`[data-calcfila="${col.id}"]`); if (td) td.textContent = col.calc(r); }
+        if (tr) for (const col of t.columnas) if (col.calc) { const td = tr.querySelector(`[data-calcfila="${col.id}"]`); if (td) td.textContent = col.calc(r); }
         programar(ctx);
       }
     };
