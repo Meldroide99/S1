@@ -26,6 +26,12 @@
   const escala = (extra) => T('escala', 'Escala / especialidad', Object.assign({ persona: true, sugerencias: ESCALAS, ayuda: 'Ej.: MTM CGET ILG · CGET EOF INF. Añade la columna «ESCALA» al Excel y saldrá sola.' }, extra));
 
   /* ---------- comprobaciones reutilizables ---------- */
+  // Plazo interno (Guía Burros S1): la solicitud sale vía SMD 35 días antes (5 VºBº + 30 DIPE)
+  function plazo35(inicio, firma, av) {
+    if (!inicio || !firma) return;
+    const dias = C.diasEntre(firma, inicio);
+    if (dias < 35) av.push({ tipo: 'aviso', txt: `Empieza ${dias < 0 ? 'antes de la fecha del escrito' : 'dentro de ' + dias + ' días'}: hay que enviarla vía SMD al menos 35 días antes (5 de VºBº + 30 de DIPE).` });
+  }
   function rango(ini, fin, avisos, nombre = 'la fecha final') {
     if (ini && fin && fin < ini) avisos.push({ tipo: 'error', txt: `La fecha de inicio es posterior a ${nombre}.` });
   }
@@ -49,6 +55,7 @@
       const tr = d.tramos.map(t => ({ ...t, a: C.aFecha(t.ini), b: C.aFecha(t.fin) })).filter(t => t.a || t.b);
       let total = 0;
       tr.sort((x, y) => (x.a || 0) - (y.a || 0));
+      const fest = C.festivos(d.festivos);
       d.tramos = tr.map(t => {
         if (t.a && t.b && t.b < t.a) av.push({ tipo: 'error', txt: `Tramo ${C.corta(t.a)}: el final es anterior al inicio.` });
         const n = t.a && t.b && t.b >= t.a ? C.diasEntre(t.a, t.b) + 1 : '';
@@ -59,13 +66,20 @@
         const prev = tr[i - 1].b, cur = tr[i].a; if (!prev || !cur) continue;
         if (cur <= prev) { av.push({ tipo: 'error', txt: `Los tramos ${i} y ${i + 1} se solapan.` }); continue; }
         let laborable = false;
-        for (let x = new Date(prev.getTime() + 864e5); x < cur; x = new Date(x.getTime() + 864e5)) if (C.esLaborable(x)) { laborable = true; break; }
-        if (!laborable) av.push({ tipo: 'error', txt: `Entre el tramo ${i} y el ${i + 1} no hay ningún día laborable (nota 3). Revisa también los festivos.` });
+        for (let x = new Date(prev.getTime() + 864e5); x < cur; x = new Date(x.getTime() + 864e5)) if (C.esLaborable(x, fest)) { laborable = true; break; }
+        if (!laborable) av.push({ tipo: 'error', txt: `Entre el tramo ${i} y el ${i + 1} no hay ningún día laborable (nota 3: ni sábado, ni domingo, ni festivo).` });
       }
       d.total_dias = total ? String(total) : '';
       d.total_tramos = tr.length ? String(tr.length) : '';
       const f = C.aFecha(d.fecha_firma);
       if (f && tr.some(t => t.b && t.b > C.sumarMeses(f, 9))) av.push({ tipo: 'aviso', txt: 'Hay tramos a más de nueve meses vista (nota 1).' });
+      if (tr.length && tr[0].a) plazo35(tr[0].a, f, av);
+      const anios = [...new Set(tr.flatMap(t => [t.a, t.b]).filter(Boolean).map(x => x.getFullYear()))];
+      const sinFest = anios.filter(y => ![...fest].some(k => k.startsWith(y + '-')));
+      const sinLocales = anios.filter(y => !sinFest.includes(y) && !String(d.festivos || '').split('\n').some(l => l.includes('/' + y) && /local/i.test(l)));
+      if (sinFest.length) av.push({ tipo: 'aviso', txt: `No hay festivos de ${sinFest.join(', ')} en Ajustes: la nota 3 solo se comprueba con sábados y domingos.` });
+      if (sinLocales.length) av.push({ tipo: 'aviso', txt: `Faltan las fiestas locales de ${sinLocales.join(', ')} en Ajustes (se publican en el BOCM hacia diciembre): revisa a mano que no caigan entre tramos.` });
+      if (!sinFest.length && !sinLocales.length && anios.length) av.push({ tipo: 'info', txt: 'La nota 3 se comprueba con los festivos de Ajustes (nacionales, Comunidad de Madrid y locales).' });
       if (total > 90) av.push({ tipo: 'error', txt: `Suma ${total} días: el máximo son 90 días naturales cada dos años de servicio (art. 18.1).` });
       else if (total) av.push({ tipo: 'info', txt: `Total ${total} días en ${tr.length} tramo(s). Recuerda: máximo 90 días cada 2 años y sin retribución (art. 18).` });
       if (!tr.length) av.push({ tipo: 'falta', txt: 'Añade al menos un tramo.' });
@@ -91,6 +105,7 @@
       calcular(d, av) {
         const a = C.aFecha(d.fecha_ini), b = C.aFecha(d.fecha_fin);
         rango(a, b, av);
+        plazo35(a, C.aFecha(d.fecha_firma), av);
         if (a && b && a.getFullYear() !== b.getFullYear()) av.push({ tipo: 'error', txt: 'Solo una licencia por estudios en el año natural: inicio y fin deben caer en el mismo año (art. 19.3).' });
         if (!horas) {
           const n = a && b && b >= a ? C.diasEntre(a, b) + 1 : 0;

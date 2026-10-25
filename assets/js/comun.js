@@ -28,7 +28,14 @@
   const hoy = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
   const diasEntre = (a, b) => Math.round((b - a) / 86400000);
   const sumarMeses = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, d.getDate());
-  const esLaborable = d => d.getDay() !== 0 && d.getDay() !== 6;
+  /** Festivos de Ajustes como Set de 'aaaa-mm-dd'. */
+  function festivos(texto) {
+    const s = new Set();
+    for (const l of String(texto || '').split(/\r?\n/)) { const f = aFecha((l.match(/\d{1,2}\/\d{1,2}\/\d{2,4}/) || [])[0]); if (f) s.add(iso(f)); }
+    return s;
+  }
+  /** Laborable = de lunes a viernes y no festivo. */
+  const esLaborable = (d, fest) => d.getDay() !== 0 && d.getDay() !== 6 && !(fest && fest.has(iso(d)));
 
   // ------------------------------------------------------------------ números en letra
   const U = ['cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete', 'dieciocho', 'diecinueve', 'veinte', 'veintiuno', 'veintidós', 'veintitrés', 'veinticuatro', 'veinticinco', 'veintiséis', 'veintisiete', 'veintiocho', 'veintinueve'];
@@ -165,6 +172,8 @@
       '21-25SEP | EPCIS III',
       '28SEP-6OCT | GGAA LAURIA PRINCIPAL III-26 (CH)',
     ].join('\n') },
+    { k: 'festivos', et: 'Festivos (uno por línea: dd/mm/aaaa · nombre)', tipo: 'area', grupo: 'Festivos', v: ['01/01/2026 · Año Nuevo', '06/01/2026 · Epifanía del Señor', '02/04/2026 · Jueves Santo', '03/04/2026 · Viernes Santo', '01/05/2026 · Fiesta del Trabajo', '02/05/2026 · Día de la Comunidad de Madrid', '25/05/2026 · Fiesta local Paracuellos de Jarama', '26/05/2026 · Fiesta local Paracuellos de Jarama', '15/08/2026 · Asunción de la Virgen', '12/10/2026 · Fiesta Nacional de España', '02/11/2026 · Todos los Santos (traslado)', '07/12/2026 · Día de la Constitución (traslado)', '08/12/2026 · Inmaculada Concepción', '25/12/2026 · Natividad del Señor', '01/01/2027 · Año Nuevo', '06/01/2027 · Epifanía del Señor', '19/03/2027 · San José', '25/03/2027 · Jueves Santo', '26/03/2027 · Viernes Santo', '01/05/2027 · Fiesta del Trabajo', '16/08/2027 · Asunción de la Virgen (traslado)', '12/10/2027 · Fiesta Nacional de España', '01/11/2027 · Todos los Santos', '06/12/2027 · Día de la Constitución', '08/12/2027 · Inmaculada Concepción', '25/12/2027 · Natividad del Señor'].join('\n'),
+      ayuda: 'Nacionales y de la Comunidad de Madrid 2026 y 2027, y locales de Paracuellos 2026 (BOCM). Añade las locales de 2027 cuando se publiquen (suele ser en diciembre).' },
     { k: 'destinatario', et: 'Destinatario de instancias', v: 'EXCMO. SR. GENERAL DIRECTOR DE PERSONAL', grupo: 'Destinatarios' },
     { k: 'destinatario_sgp', et: 'Destinatario de excedencias', v: 'SR. SUBDIRECTOR DE GESTIÓN DE PERSONAL', grupo: 'Destinatarios' },
     { k: 'ciudad_destino', et: 'Ciudad del destinatario', v: 'MADRID', grupo: 'Destinatarios' },
@@ -191,7 +200,7 @@
 
   global.Comun = {
     sinAcentos, norm, esc, aFecha, iso, corta, larga, militar, hoy, diasEntre, sumarMeses, esLaborable, letras,
-    abreviar, desabreviar, CAMPOS_PERSONA, detectarMapa, persona, buscarPersonas,
+    festivos, abreviar, desabreviar, CAMPOS_PERSONA, detectarMapa, persona, buscarPersonas,
     AJUSTES_DEF, ajustes, guardarAjustes, leerLocal, guardarLocal, nombreArchivo, MESES,
   };
 })(window);
