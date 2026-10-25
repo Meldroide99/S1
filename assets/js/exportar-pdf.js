@@ -190,7 +190,7 @@
   /** PDF que se va llenando documento a documento (para sacar muchos de golpe). */
   async function nuevoPdf(titulo) {
     const pdf = await PDFDocument.create();
-    pdf.setTitle(titulo || 'Documento'); pdf.setCreator('Mesa de Documentación'); pdf.setProducer('Mesa de Documentación');
+    pdf.setTitle(titulo || 'Documento'); pdf.setCreator('IIBPAC'); pdf.setProducer('IIBPAC · Documentación');
     pdf.setLanguage('es-ES');
     const F = await fuentes(pdf); const cache = new Map();
     return {

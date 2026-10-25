@@ -12,6 +12,9 @@
   const main = $('#principal');
   /** Pinta una página nueva dentro de <main> y devuelve su raíz (los escuchadores van en ella). */
   function pintar(html) { const r = document.createElement('div'); r.className = 'vista-pagina'; r.innerHTML = html; main.replaceChildren(r); return r; }
+  /** Banda de cabecera con foto para las páginas interiores. */
+  const banda = (miga, titulo, texto) => `<section class="banda"><div class="contenedor">
+      <div class="miga">${miga}</div><h1 class="titular">${titulo}</h1>${texto ? `<p>${texto}</p>` : ''}</div></section>`;
 
   const SECCIONES = {
     s1: { n: 'S1', nombre: 'Personal', desc: 'Licencias, conciliación, bajas, hoja anual, destinos y distintivos.' },
@@ -185,8 +188,9 @@
     const raiz = pintar(`
     <section class="portada"><div class="contenedor portada-grid">
       <div>
-        <span class="eyebrow">S1 · S2 · S3 · S4</span>
-        <h1 class="titular" style="margin-top:14px">Papeles listos<br>en <i>segundos</i>.</h1>
+        <div class="portada-marca"><img src="assets/img/escudo-bpac.png" alt="Escudo del BILPAC II «Roger de Lauria»" width="400" height="468">
+          <div><span class="eyebrow">BILPAC II · «Roger de Lauria»</span><div class="portada-nombre">II<em>BPAC</em></div></div></div>
+        <h1 class="titular" style="margin-top:22px">Papeles listos<br>en <i>segundos</i>.</h1>
         <p class="lead">Elige el modelo, escribe dos letras del apellido y el documento se rellena solo con los datos del Excel. Revisa la hoja tal como saldrá impresa y descárgala en Word o PDF.</p>
         <div class="cifras">
           <div class="cifra"><strong>${total}</strong><span>Modelos</span></div>
@@ -225,10 +229,7 @@
 
   function vistaSeccion(sec) {
     const s = SECCIONES[sec]; const docs = todosDocs().filter(d => d.seccion === sec);
-    pintar(`<section class="pagina"><div class="contenedor">
-      <div class="miga"><a href="#/">Inicio</a> / <span>${s.n}</span></div>
-      <h1 class="titular" style="margin-top:12px">${s.n} · <i>${s.nombre}</i></h1>
-      <p class="texto-gris" style="max-width:60ch">${s.desc}</p>
+    pintar(`${banda(`<a href="#/">Inicio</a> / <span>${s.n}</span>`, `${s.n} · <i>${s.nombre}</i>`, s.desc)}<section class="pagina"><div class="contenedor">
       ${docs.length ? listaDocs(docs) : `<div class="vacio" style="margin-top:26px"><strong>Todavía no hay modelos de ${s.n}</strong>
         Pásame los documentos y los preparo como los de S1. Mientras, puedes cargar una plantilla propia.<br><br>
         <a class="btn principal" href="#/propias">Añadir plantilla propia</a></div>`}
@@ -760,10 +761,7 @@
   function vistaAjustes() {
     const a = S.ajustes; const grupos = {};
     for (const d of C.AJUSTES_DEF) (grupos[d.grupo] = grupos[d.grupo] || []).push(d);
-    const raiz = pintar(`<section class="pagina"><div class="contenedor" style="max-width:900px">
-      <div class="miga"><a href="#/">Inicio</a> / <span>Datos de la unidad</span></div>
-      <h1 class="titular" style="margin-top:12px">Datos de la <i>unidad</i></h1>
-      <p class="texto-gris" style="max-width:62ch">Se escriben una vez y salen en todos los documentos. Se guardan solo en este navegador (no son datos personales). Si cambia el jefe de la unidad o el destinatario, se cambia aquí.</p>
+    const raiz = pintar(`${banda('<a href="#/">Inicio</a> / <span>Datos de la unidad</span>', 'Datos de la <i>unidad</i>', 'Se escriben una vez y salen en todos los documentos. Se guardan solo en este navegador (no son datos personales). Si cambia el jefe de la unidad o el destinatario, se cambia aquí.')}<section class="pagina"><div class="contenedor" style="max-width:900px">
       ${Object.entries(grupos).map(([g, l]) => `<div class="tarjeta"><h2>${esc(g)}</h2><div class="campos" style="margin-top:12px">${l.map(d => `<div class="campo"><label for="a_${d.k}">${esc(d.et)}</label>${d.tipo === 'area' ? `<textarea id="a_${d.k}" data-aj="${d.k}" rows="${Math.max(6, String(a[d.k]).split('\n').length + 1)}" style="font:13px/1.6 var(--mono)">${esc(a[d.k])}</textarea><span class="ayuda">Cada año: cambia o añade líneas. El texto antes de la barra «|» va en la columna FECHA.</span>` : `<input id="a_${d.k}" data-aj="${d.k}" value="${esc(a[d.k])}" placeholder="${esc(d.v)}">`}</div>`).join('')}</div></div>`).join('')}
       <div class="tarjeta"><h2>Restablecer</h2><p class="texto-gris">Vuelve a los valores de fábrica (RIPAC 4).</p><button class="btn suave" id="reset-aj">Restablecer valores</button></div>
     </div></section>`);
@@ -775,7 +773,7 @@
     });
     $('#reset-aj').addEventListener('click', () => { if (!confirm('¿Restablecer todos los datos de la unidad?')) return; C.guardarAjustes({}); S.ajustes = C.ajustes(); vistaAjustes(); actualizarMarca(); toast('Restablecido.'); });
   }
-  function actualizarMarca() { $('#marca-unidad').textContent = [S.ajustes.unidad_corta, S.ajustes.uco].filter(Boolean).join(' · ').replace(/[“”"]/g, ''); }
+  function actualizarMarca() { /* la marca es fija: IIBPAC «Roger de Lauria» */ }
 
   // ======================================================================= datos (Excel y columnas)
   function vistaDatos() {
@@ -783,9 +781,7 @@
     const ejemplo = S.registros[0] || {};
     const recomendadas = ['escala', 'sexo', 'domicilio', 'fecha_ingreso', 'fin_compromiso'];
     const faltan = recomendadas.filter(k => !S.mapa[k]).map(k => C.CAMPOS_PERSONA.find(c => c.k === k).et);
-    const raiz = pintar(`<section class="pagina"><div class="contenedor" style="max-width:980px">
-      <div class="miga"><a href="#/">Inicio</a> / <span>Base de datos</span></div>
-      <h1 class="titular" style="margin-top:12px">Base de <i>datos</i></h1>
+    const raiz = pintar(`${banda('<a href="#/">Inicio</a> / <span>Base de datos</span>', 'Base de <i>datos</i>', 'El Excel de personal: qué columna es cada dato.')}<section class="pagina"><div class="contenedor" style="max-width:980px">
       ${bloqueCarga()}
       ${n ? `
       ${S.hojas.length > 1 ? `<div class="tarjeta"><h2>Hoja del Excel</h2><select id="hoja" class="campo" style="margin-top:10px;padding:8px;border:1px solid var(--linea-2);border-radius:4px">${S.hojas.map(h => `<option ${h.hoja === S.hoja ? 'selected' : ''}>${esc(h.hoja)}</option>`).join('')}</select></div>` : ''}
@@ -829,9 +825,7 @@
       ['EMPLEO', 'Empleo'], ['empleo_abrev', 'Empleo abreviado'], ['dni', 'DNI'], ['escala', 'Escala / especialidad'], ['compania', 'Compañía'], ['telefono', 'Teléfono'], ['domicilio', 'Domicilio'],
       ['unidad', 'Nombre de la unidad'], ['UNIDAD', 'Unidad en mayúsculas'], ['localidad_firma', 'Lugar de firma'], ['fecha_firma_larga', 'Fecha en letra (25 de octubre de 2026)'], ['fecha_firma', 'Fecha 25/10/2026'],
       ['destinatario', 'Destinatario'], ['jefe_unidad', 'Jefe de la unidad'], ['cualquier_cosa', 'Crea un campo nuevo en el formulario'], ['fecha_algo', 'Empieza por «fecha»: campo de fecha'], ['fecha_algo_larga', 'Esa fecha en letra']];
-    const raiz = pintar(`<section class="pagina"><div class="contenedor" style="max-width:980px">
-      <div class="miga"><a href="#/">Inicio</a> / <span>Plantillas propias</span></div>
-      <h1 class="titular" style="margin-top:12px">Plantillas <i>propias</i></h1>
+    const raiz = pintar(`${banda('<a href="#/">Inicio</a> / <span>Plantillas propias</span>', 'Plantillas <i>propias</i>', '')}<section class="pagina"><div class="contenedor" style="max-width:980px">
       <p class="texto-gris" style="max-width:64ch">Coge cualquier Word, escribe los huecos entre llaves —por ejemplo <code>{NOMBRE_COMPLETO}</code>— y súbelo. Sale un formulario automático y el buscador de personas lo rellena. Se guarda solo en este navegador; para que lo tenga todo el mundo, pásamelo y lo añado a la carpeta.</p>
       <div class="tarjeta"><h2>Añadir plantilla</h2>
         <div class="campos" style="margin-top:12px"><div class="campo medio"><label for="propia-sec">Sección</label><select id="propia-sec">${Object.entries(SECCIONES).map(([k, s]) => `<option value="${k}">${s.n} · ${s.nombre}</option>`).join('')}</select></div>
@@ -867,7 +861,7 @@
     else if (a === 'propias') vistaPropias();
     else vistaInicio();
     if (!b) window.scrollTo(0, 0);
-    document.title = (b && docPorId(b) ? docPorId(b).titulo + ' · ' : '') + 'Mesa de Documentación';
+    document.title = (b && docPorId(b) ? docPorId(b).titulo + ' · ' : '') + 'IIBPAC';
   }
   window.addEventListener('hashchange', router);
   document.addEventListener('keydown', e => {
