@@ -1,0 +1,13 @@
+# NUNCA subir datos de personal: el repositorio es público.
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+*.ods
+# Temporales de Office y del sistema
+~$*
+.~lock*
+.DS_Store
+Thumbs.db
+desktop.ini
+__pycache__/

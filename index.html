@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="referrer" content="no-referrer">
+<title>Mesa de Documentación</title>
+<meta name="description" content="Rellena los modelos de S1 a S4 con los datos del Excel de personal y descárgalos en Word o PDF. Funciona sin internet; los datos no salen del equipo.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%2316181B'/%3E%3Cpath d='M18 44V20h16a8 8 0 0 1 0 16H24' fill='none' stroke='%23B8945E' stroke-width='5'/%3E%3Cpath d='M38 44h8' stroke='%23B8945E' stroke-width='5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<a class="saltar" href="#principal">Saltar al contenido</a>
+
+<header class="barra" id="barra">
+  <a class="marca" href="#/" aria-label="Inicio">
+    <span class="monograma" aria-hidden="true"><span>M</span><i>d</i></span>
+    <span class="marca-texto">
+      <strong>Mesa de <em>Documentación</em></strong>
+      <small id="marca-unidad">RIPAC 4 · BPAC II</small>
+    </span>
+  </a>
+  <nav class="secciones-nav" aria-label="Secciones">
+    <a href="#/s1" data-sec="s1">S1 <span>Personal</span></a>
+    <a href="#/s2" data-sec="s2">S2 <span>Inteligencia</span></a>
+    <a href="#/s3" data-sec="s3">S3 <span>Operaciones</span></a>
+    <a href="#/s4" data-sec="s4">S4 <span>Logística</span></a>
+  </nav>
+  <div class="barra-der">
+    <button class="pildora-datos" id="pildora-datos" type="button" aria-haspopup="dialog">
+      <span class="punto" aria-hidden="true"></span><span id="pildora-texto">Cargar Excel</span>
+    </button>
+    <a class="icono-btn" href="#/ajustes" title="Datos de la unidad" aria-label="Datos de la unidad">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+    </a>
+  </div>
+</header>
+
+<main id="principal" tabindex="-1"></main>
+
+<input type="file" id="archivo-excel" accept=".xlsx,.csv,.txt" hidden>
+<input type="file" id="archivo-plantilla" accept=".docx" hidden>
+
+<div class="soltar" id="soltar" aria-hidden="true">
+  <div class="soltar-caja">
+    <strong>Suelta el Excel aquí</strong>
+    <span>Se lee en este ordenador. No se sube a ningún sitio.</span>
+  </div>
+</div>
+
+<div class="avisos-flotantes" id="toasts" role="status" aria-live="polite"></div>
+
+<!-- Zona oculta donde se maquetan los documentos para exportar varios a PDF -->
+<div id="taller" aria-hidden="true"></div>
+<div id="estilos-docx"></div>
+
+<!-- Librerías incluidas en la carpeta: funciona sin internet -->
+<script src="assets/vendor/jszip.min.js"></script>
+<script src="assets/vendor/docx-preview.min.js"></script>
+<script src="assets/vendor/pdf-lib.min.js"></script>
+<script src="assets/js/comun.js"></script>
+<script src="assets/js/motor.js"></script>
+<script src="assets/js/excel.js"></script>
+<script src="assets/js/exportar-pdf.js"></script>
+<!-- Documentos por sección -->
+<script src="s1/documentos.js"></script><script src="s1/plantillas.js"></script>
+<script src="s2/documentos.js"></script><script src="s2/plantillas.js"></script>
+<script src="s3/documentos.js"></script><script src="s3/plantillas.js"></script>
+<script src="s4/documentos.js"></script><script src="s4/plantillas.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
