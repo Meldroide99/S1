@@ -233,7 +233,7 @@
 
   function vistaSeccion(sec) {
     const s = SECCIONES[sec]; const docs = todosDocs().filter(d => d.seccion === sec);
-    pintar(`${banda(`<a href="#/">Inicio</a> / <span>${s.n}</span>`, `${s.n} · <i>${s.nombre}</i>`, s.desc)}<section class="pagina"><div class="contenedor">
+    pintar(`${banda(`<a href="#/">Inicio</a> / <span>${s.n}</span>`, `${s.n} · <i>${s.nombre}</i>`, s.desc, { s1: '', s2: 'foto-c295', s3: 'foto-puerta', s4: 'foto-sierra' }[sec])}<section class="pagina"><div class="contenedor">
       ${docs.length ? listaDocs(docs) : `<div class="vacio" style="margin-top:26px"><strong>Todavía no hay modelos de ${s.n}</strong>
         Pásame los documentos y los preparo como los de S1. Mientras, puedes cargar una plantilla propia.<br><br>
         <a class="btn principal" href="#/propias">Añadir plantilla propia</a></div>`}
