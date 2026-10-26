@@ -53,6 +53,7 @@ tools/                scripts para regenerar las plantillas
 ```
 python3 tools/generar_plantillas.py   # solo si se cambian los modelos de S1 hechos por código
 python3 tools/empaquetar.py           # siempre que cambie algún .docx
+python3 tools/sellar.py               # antes de subir: marca de versión para que nadie vea la versión vieja
 ```
 
 Huecos: `{campo}` tal cual · `{CAMPO}` en mayúsculas · `{Campo}` tipo título · `{#lista}…{/lista}` repite una fila de tabla · `{?campo}` al inicio de un párrafo lo quita si el campo está vacío.
