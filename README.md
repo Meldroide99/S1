@@ -15,6 +15,8 @@ Página local para rellenar los modelos de la unidad con los datos del Excel de 
 
 ## Privacidad
 
+- La página pide usuario y contraseña al entrar. Es una **cortina**, no seguridad real: la página es pública y funciona entera en el navegador. Lo que protege los datos es que el Excel nunca sale del equipo.
+
 - El Excel se lee **solo en el navegador** y desaparece al cerrar la pestaña. No se sube a ningún sitio y no se guarda en el equipo.
 - El repositorio es **público**: el `.gitignore` impide subir Excel o CSV. No subas nunca documentos rellenos.
 - En el navegador solo se guardan los datos de la unidad (Ajustes), qué columna es cada dato y las plantillas propias.

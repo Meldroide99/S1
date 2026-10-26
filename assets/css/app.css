@@ -401,3 +401,25 @@ section.docx > footer { display: flex; flex-direction: column; justify-content: 
 .titular-lauria { font: 400 clamp(84px, 13vw, 176px)/.9 var(--serif); letter-spacing: -.02em; margin: 18px 0 0 -4px; color: #fff;
   background: linear-gradient(180deg, #FFFFFF 30%, #E9DCC0 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   text-shadow: none; filter: drop-shadow(0 6px 18px rgba(0,0,0,.35)); }
+
+/* ======================================================= pantalla de acceso */
+body.sin-acceso .secciones-nav, body.sin-acceso .barra-der { visibility: hidden; }
+.icono-btn { border: 0; background: transparent; cursor: pointer; }
+.acceso { position: relative; min-height: calc(100vh - var(--barra)); min-height: calc(100dvh - var(--barra)); display: grid; place-items: center; padding: 40px 16px; overflow: hidden; background: var(--azul-noche); }
+.acceso::before { content: ''; position: absolute; inset: -12px; background: url('../img/cielo-lanzamiento.jpg') center / cover no-repeat; filter: blur(2px); transform: scale(1.04); }
+.acceso::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(10,44,74,.55), rgba(8,33,56,.94) 70%); }
+.acceso-caja { position: relative; z-index: 1; width: min(380px, 100%); background: rgba(252,251,249,.97); border-radius: 8px; padding: 30px 28px 26px; box-shadow: 0 30px 70px -20px rgba(0,0,0,.6); border-top: 3px solid var(--oro-claro); display: flex; flex-direction: column; }
+.acceso-caja img { height: 112px; width: auto; align-self: center; margin-bottom: 12px; filter: drop-shadow(0 4px 10px rgba(0,0,0,.25)); }
+.acceso-caja .eyebrow { text-align: center; }
+.acceso-caja h1 { font: 500 44px/1 var(--serif); text-align: center; color: var(--oro); margin-top: 6px; letter-spacing: .02em; }
+.acceso-caja h1 em { font-style: normal; color: var(--azul-noche); }
+.acceso-caja p { text-align: center; color: var(--gris); margin: 6px 0 18px; font-size: 13.5px; }
+.acceso-caja label { font-size: 12px; font-weight: 700; color: var(--tinta-2); margin: 10px 0 5px; }
+.acceso-caja input:not([type=checkbox]) { border: 1px solid var(--linea-2); border-radius: var(--radio); padding: 11px 12px; font-size: 15px; background: #fff; outline: none; }
+.acceso-caja input:not([type=checkbox]):focus { border-color: var(--oro); box-shadow: 0 0 0 3px var(--oro-suave); }
+.acceso-recordar { display: flex; align-items: center; gap: 8px; font-weight: 500 !important; color: var(--gris) !important; margin-top: 14px !important; cursor: pointer; }
+.acceso-recordar input { accent-color: var(--oro); }
+.acceso-error { min-height: 20px; color: var(--error); font-size: 13px; font-weight: 600; margin: 8px 0 4px; }
+.acceso-caja .btn { margin-top: 4px; padding: 12px 18px; font-size: 14px; }
+.temblor { animation: temblor .4s; }
+@keyframes temblor { 20%, 60% { transform: translateX(-7px); } 40%, 80% { transform: translateX(7px); } }

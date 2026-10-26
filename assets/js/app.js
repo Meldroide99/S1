@@ -845,6 +845,7 @@
 
   // ======================================================================= rutas
   function router() {
+    if (!dentro()) { pantallaAcceso(); return; }
     clearTimeout(temporizador); S.version++;
     const h = location.hash.replace(/^#\/?/, '');
     const [a, b] = h.split('/');
@@ -868,7 +869,72 @@
     if (e.key !== '/' || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
     const t = $('#busca:not([disabled])') || $('#filtro-docs'); if (t) { e.preventDefault(); t.focus(); }
   });
-  actualizarMarca(); pintarPildora(); router();
+  // ======================================================================= acceso
+  // OJO: es una cortina, no seguridad real. La página es pública y funciona entera en el
+  // navegador; lo que protege los datos es que el Excel nunca sale del equipo.
+  const HUELLA = '6bdaa07d7fa7b42abc97af7fb6bde568c64bd42d782b29f76d2551a75af69c80'; // sha256('lauria:Paraca')
+  const CLAVE_ACCESO = 'iibpac.acceso';
+  function sha256(texto) {
+    if (window.crypto && crypto.subtle) {
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(texto)).then(b => Array.from(new Uint8Array(b), x => x.toString(16).padStart(2, '0')).join(''));
+    }
+    // respaldo sin crypto.subtle (algunos navegadores con file://)
+    const K = [], H = []; let n = 2, c = 0;
+    const frac = x => ((x - Math.floor(x)) * 4294967296) | 0;
+    while (c < 64) { let primo = true; for (let i = 2; i * i <= n; i++) if (n % i === 0) { primo = false; break; } if (primo) { if (c < 8) H[c] = frac(Math.pow(n, 1 / 2)); K[c++] = frac(Math.pow(n, 1 / 3)); } n++; }
+    const b = Array.from(new TextEncoder().encode(texto)); const l = b.length * 8; b.push(0x80);
+    while (b.length % 64 !== 56) b.push(0);
+    for (let i = 7; i >= 0; i--) b.push(i > 3 ? 0 : (l >>> (i * 8)) & 255);
+    const r = (x, k) => (x >>> k) | (x << (32 - k)); const h = H.slice();
+    for (let o = 0; o < b.length; o += 64) {
+      const w = []; for (let i = 0; i < 16; i++) w[i] = (b[o + i * 4] << 24) | (b[o + i * 4 + 1] << 16) | (b[o + i * 4 + 2] << 8) | b[o + i * 4 + 3];
+      for (let i = 16; i < 64; i++) { const s0 = r(w[i - 15], 7) ^ r(w[i - 15], 18) ^ (w[i - 15] >>> 3), s1 = r(w[i - 2], 17) ^ r(w[i - 2], 19) ^ (w[i - 2] >>> 10); w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0; }
+      let [A, B, Cc, Dd, E, Fv, G, Hh] = h;
+      for (let i = 0; i < 64; i++) {
+        const t1 = (Hh + (r(E, 6) ^ r(E, 11) ^ r(E, 25)) + ((E & Fv) ^ (~E & G)) + K[i] + w[i]) | 0;
+        const t2 = ((r(A, 2) ^ r(A, 13) ^ r(A, 22)) + ((A & B) ^ (A & Cc) ^ (B & Cc))) | 0;
+        Hh = G; G = Fv; Fv = E; E = (Dd + t1) | 0; Dd = Cc; Cc = B; B = A; A = (t1 + t2) | 0;
+      }
+      [A, B, Cc, Dd, E, Fv, G, Hh].forEach((v, i) => { h[i] = (h[i] + v) | 0; });
+    }
+    return Promise.resolve(h.map(x => (x >>> 0).toString(16).padStart(8, '0')).join(''));
+  }
+  const dentro = () => { try { return sessionStorage.getItem(CLAVE_ACCESO) === HUELLA || localStorage.getItem(CLAVE_ACCESO) === HUELLA; } catch (e) { return S.dentro === true; } };
+  function pantallaAcceso() {
+    document.body.classList.add('sin-acceso');
+    main.replaceChildren();
+    const r = pintar(`<section class="acceso">
+      <form class="acceso-caja" id="form-acceso" autocomplete="on" novalidate>
+        <img src="assets/img/escudo-bpac.png" alt="Escudo del BILPAC II «Roger de Lauria»" width="400" height="468">
+        <span class="eyebrow">BILPAC II · «Roger de Lauria»</span>
+        <h1>II<em>BPAC</em></h1>
+        <p>Acceso a la documentación</p>
+        <label for="ac-usuario">Usuario</label>
+        <input id="ac-usuario" name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+        <label for="ac-clave">Contraseña</label>
+        <input id="ac-clave" name="password" type="password" autocomplete="current-password" required>
+        <label class="acceso-recordar"><input type="checkbox" id="ac-recordar"> Recordar en este equipo</label>
+        <div class="acceso-error" id="ac-error" role="alert"></div>
+        <button class="btn oro" type="submit">Entrar</button>
+      </form></section>`);
+    const f = $('#form-acceso', r);
+    setTimeout(() => $('#ac-usuario').focus(), 50);
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const u = $('#ac-usuario').value.trim().toLowerCase(), c = $('#ac-clave').value;
+      const h = await sha256(u + ':' + c);
+      if (h !== HUELLA) { $('#ac-error').textContent = 'Usuario o contraseña incorrectos.'; $('#ac-clave').value = ''; $('#ac-clave').focus(); f.classList.remove('temblor'); void f.offsetWidth; f.classList.add('temblor'); return; }
+      S.dentro = true;
+      try { sessionStorage.setItem(CLAVE_ACCESO, HUELLA); if ($('#ac-recordar').checked) localStorage.setItem(CLAVE_ACCESO, HUELLA); } catch (err) { /* modo privado */ }
+      document.body.classList.remove('sin-acceso');
+      router();
+    });
+  }
+  function salir() { try { sessionStorage.removeItem(CLAVE_ACCESO); localStorage.removeItem(CLAVE_ACCESO); } catch (e) { } S.dentro = false; olvidarDatos(); location.hash = '#/'; pantallaAcceso(); }
+  window.__salir = salir;
+
+  actualizarMarca(); pintarPildora();
+  if (dentro()) router(); else pantallaAcceso();
   // para las pruebas automáticas
   window.__mesa = { S, datosFicticios, construirDatos, docPorId };
 })();
