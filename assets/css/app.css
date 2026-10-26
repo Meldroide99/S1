@@ -450,3 +450,10 @@ body.sin-acceso .secciones-nav, body.sin-acceso .barra-der { visibility: hidden;
 @media (max-width: 860px) { .datos-fila { grid-template-columns: 1fr; gap: 26px; } .portada-limpia { padding-bottom: 80px; } }
 @media (max-width: 560px) { .portada-pie i { display: none; } .portada-pie { gap: 8px; flex-direction: column; } }
 #paso-datos { scroll-margin-top: calc(var(--barra) + 8px); }
+
+/* escudo más grande y leyenda de la Bandera */
+.portada-escudo { height: clamp(190px, 32vh, 320px); margin-bottom: 22px; }
+.portada-limpia .portada-bandera { font-size: clamp(11px, 1.15vw, 14px); letter-spacing: .28em; line-height: 1.6; max-width: 34em; }
+.portada-limpia { padding-bottom: 48px; }
+.portada-limpia .portada-bandera { max-width: none; } .portada-bandera > span { white-space: nowrap; }
+@media (max-width: 560px) { .portada-limpia .portada-bandera { letter-spacing: .2em; } }

@@ -188,10 +188,8 @@
     const raiz = pintar(`
     <section class="portada portada-limpia"><div class="contenedor portada-centro">
       <img class="portada-escudo" src="assets/img/escudo-bpac.png" alt="Escudo del BILPAC II «Roger de Lauria»" width="400" height="468">
-      <span class="eyebrow">BILPAC II · «Roger de Lauria»</span>
+      <span class="eyebrow portada-bandera"><span>Segunda Bandera «Roger de Lauria»</span> <span>de Paracaidistas</span></span>
       <h1 class="titular titular-lauria">Lauria</h1>
-      <div class="portada-pie"><span>II<em>BPAC</em></span><i aria-hidden="true"></i><span>Documentación S1 · S2 · S3 · S4</span></div>
-      <a class="portada-bajar" href="#paso-datos" aria-label="Bajar a los modelos" data-bajar="1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></a>
     </div></section>
     <section class="bloque bloque-datos" id="paso-datos"><div class="contenedor datos-fila">
       <div class="datos-texto">
@@ -219,8 +217,6 @@
       <div id="lista-docs">${listaDocs(docs)}</div>
     </div></section>`);
     enlazarCarga(raiz);
-    // la flecha baja suave sin cambiar la ruta (#/)
-    $('[data-bajar]', raiz).addEventListener('click', e => { e.preventDefault(); $('#paso-datos').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); });
     $('#filtro-docs').addEventListener('input', e => {
       const q = C.norm(e.target.value);
       $('#lista-docs').innerHTML = listaDocs(docs.filter(d => C.norm(d.titulo + ' ' + d.grupo + ' ' + (d.resumen || '') + ' ' + d.seccion).includes(q))) || '<div class="vacio"><strong>Nada con ese nombre</strong>Prueba con otra palabra.</div>';
