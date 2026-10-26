@@ -163,14 +163,17 @@
     { k: 'jefe_unidad', et: 'Jefe de la unidad (para la hoja anual)', v: 'D. Javier Arrabal Flores', grupo: 'Firma' },
     { k: 'ejercicios', et: 'Ejercicios del año (uno por línea: FECHA | EJERCICIO)', tipo: 'area', grupo: 'Hoja anual', v: [
       '7FEB-8MAR | STEADFAST DART 2026',
-      '10-16ABR | GGAA “LAURIA PARACA II/26”',
-      '27ABR-15MAY | FASE O DAGUET 26 ARF (NIMES)',
-      '18-29MAY | EX. LONE PARATROOPER (LEÓN)',
+      '10-16ABR | GGAA "LAURIA PARACA II/26"',
+      '27ABR-15MAY | FASE O DAGUET 26 ARF (NIMES) 2PAX',
+      '18-29MAY | EX. LONE PARATROOPER-LEÓN',
       '15-19JUN | SIMACA 01',
+      '28-30JUN | TORMENTA ALADA',
       '7-11SEP | RECOZO',
       '14-18SEP | SIMACA 02',
       '21-25SEP | EPCIS III',
-      '28SEP-6OCT | GGAA LAURIA PRINCIPAL III-26 (CH)',
+      '24-30SEP | BETA INTEGRACIÓN F-E SVK VII',
+      '28SEP-6OCT | EX. GGAA LAURIA PRINCIPAL III-26 (CH)',
+      '8-31DIC | DESPLIEGUE E INTEGRACIÓN EN EL SLOVAKIA MULTINATIONAL BRIGADE TASK FORCE',
     ].join('\n') },
     { k: 'festivos', et: 'Festivos (uno por línea: dd/mm/aaaa · nombre)', tipo: 'area', grupo: 'Festivos', v: ['01/01/2026 · Año Nuevo', '06/01/2026 · Epifanía del Señor', '02/04/2026 · Jueves Santo', '03/04/2026 · Viernes Santo', '01/05/2026 · Fiesta del Trabajo', '02/05/2026 · Día de la Comunidad de Madrid', '25/05/2026 · Fiesta local Paracuellos de Jarama', '26/05/2026 · Fiesta local Paracuellos de Jarama', '15/08/2026 · Asunción de la Virgen', '12/10/2026 · Fiesta Nacional de España', '02/11/2026 · Todos los Santos (traslado)', '07/12/2026 · Día de la Constitución (traslado)', '08/12/2026 · Inmaculada Concepción', '25/12/2026 · Natividad del Señor', '01/01/2027 · Año Nuevo', '06/01/2027 · Epifanía del Señor', '19/03/2027 · San José', '25/03/2027 · Jueves Santo', '26/03/2027 · Viernes Santo', '01/05/2027 · Fiesta del Trabajo', '16/08/2027 · Asunción de la Virgen (traslado)', '12/10/2027 · Fiesta Nacional de España', '01/11/2027 · Todos los Santos', '06/12/2027 · Día de la Constitución', '08/12/2027 · Inmaculada Concepción', '25/12/2027 · Natividad del Señor'].join('\n'),
       ayuda: 'Nacionales y de la Comunidad de Madrid 2026 y 2027, y locales de Paracuellos 2026 (BOCM). Añade las locales de 2027 cuando se publiquen (suele ser en diciembre).' },
@@ -187,13 +190,26 @@
   const CLAVE_AJUSTES = 'mesa-doc.ajustes.v1';
   function leerLocal(clave, def) { try { const v = localStorage.getItem(clave); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
   function guardarLocal(clave, v) { try { localStorage.setItem(clave, JSON.stringify(v)); return true; } catch (e) { return false; } }
+  // Listas de ejercicios que venían por defecto en versiones anteriores: si alguien las tiene
+  // guardadas sin tocar, recibe la lista nueva.
+  const EJERCICIOS_ANTIGUOS = [
+    ['7FEB-8MAR | STEADFAST DART 2026', '10-16ABR | GGAA “LAURIA PARACA II/26”', '27ABR-15MAY | FASE O DAGUET 26 ARF (NIMES)',
+     '18-29MAY | EX. LONE PARATROOPER (LEÓN)', '15-19JUN | SIMACA 01', '7-11SEP | RECOZO', '14-18SEP | SIMACA 02', '21-25SEP | EPCIS III',
+     '28SEP-6OCT | GGAA LAURIA PRINCIPAL III-26 (CH)'].join('\n'),
+  ];
   function ajustes() {
     const guard = leerLocal(CLAVE_AJUSTES, {});
+    if (EJERCICIOS_ANTIGUOS.includes(guard.ejercicios)) delete guard.ejercicios;
     // un ajuste guardado vacío vuelve al valor por defecto (si no, el valor nuevo nunca llegaría)
     const a = {}; for (const d of AJUSTES_DEF) a[d.k] = guard[d.k] !== undefined && guard[d.k] !== '' ? guard[d.k] : d.v;
     return a;
   }
-  const guardarAjustes = a => guardarLocal(CLAVE_AJUSTES, a);
+  /** Solo se guarda lo que difiere del valor por defecto: así, al actualizar la página, los
+   *  valores por defecto nuevos (ejercicios, festivos...) llegan a todo el que no los haya cambiado. */
+  const guardarAjustes = a => {
+    const dif = {}; for (const d of AJUSTES_DEF) if (a[d.k] !== undefined && a[d.k] !== d.v) dif[d.k] = a[d.k];
+    return guardarLocal(CLAVE_AJUSTES, dif);
+  };
 
   const nombreArchivo = (...partes) => partes.filter(Boolean).join('_').normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^A-Za-z0-9_\-]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 120);
