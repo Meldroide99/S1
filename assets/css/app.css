@@ -350,7 +350,7 @@ section.docx > footer { display: flex; flex-direction: column; justify-content: 
 
 /* portada con foto */
 .portada { position: relative; overflow: hidden; color: #fff; border-bottom: 0; background: var(--azul-noche); padding: 52px 0 40px; }
-.portada::before { content: ''; position: absolute; inset: -12px; background: url('../img/cielo-atardecer.jpg') center 35% / cover no-repeat; filter: blur(1.5px) saturate(1.05); transform: scale(1.03); }
+.portada::before { content: ''; position: absolute; inset: -12px; background: url('../img/foto-lanzamiento-masivo.jpg') center 40% / cover no-repeat; filter: none; transform: none; }
 .portada::after { content: ''; position: absolute; inset: 0; background:
   linear-gradient(90deg, rgba(8,33,56,.96) 0%, rgba(9,38,64,.88) 42%, rgba(10,44,74,.55) 70%, rgba(10,44,74,.35) 100%),
   linear-gradient(0deg, rgba(8,33,56,.75), transparent 45%); }
@@ -370,7 +370,7 @@ section.docx > footer { display: flex; flex-direction: column; justify-content: 
 
 /* bandas con foto en las páginas interiores */
 .banda { position: relative; overflow: hidden; color: #fff; background: var(--azul-noche); padding: 46px 0 34px; }
-.banda::before { content: ''; position: absolute; inset: -12px; background: url('../img/cielo-lanzamiento.jpg') center 40% / cover no-repeat; filter: blur(1.5px); transform: scale(1.03); }
+.banda::before { content: ''; position: absolute; inset: -12px; background: url('../img/foto-a400m-salto.jpg') center 45% / cover no-repeat; filter: none; transform: none; }
 .banda::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(8,33,56,.95) 0%, rgba(9,38,64,.82) 55%, rgba(10,44,74,.5) 100%); }
 .banda > .contenedor { position: relative; z-index: 1; }
 .banda .miga, .banda .miga a { color: #A9BCD0; }
@@ -406,7 +406,7 @@ section.docx > footer { display: flex; flex-direction: column; justify-content: 
 body.sin-acceso .secciones-nav, body.sin-acceso .barra-der { visibility: hidden; }
 .icono-btn { border: 0; background: transparent; cursor: pointer; }
 .acceso { position: relative; min-height: calc(100vh - var(--barra)); min-height: calc(100dvh - var(--barra)); display: grid; place-items: center; padding: 40px 16px; overflow: hidden; background: var(--azul-noche); }
-.acceso::before { content: ''; position: absolute; inset: -12px; background: url('../img/cielo-lanzamiento.jpg') center / cover no-repeat; filter: blur(2px); transform: scale(1.04); }
+.acceso::before { content: ''; position: absolute; inset: -12px; background: url('../img/foto-puerta.jpg') center 40% / cover no-repeat; filter: none; transform: none; }
 .acceso::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(10,44,74,.55), rgba(8,33,56,.94) 70%); }
 .acceso-caja { position: relative; z-index: 1; width: min(380px, 100%); background: rgba(252,251,249,.97); border-radius: 8px; padding: 30px 28px 26px; box-shadow: 0 30px 70px -20px rgba(0,0,0,.6); border-top: 3px solid var(--oro-claro); display: flex; flex-direction: column; }
 .acceso-caja img { height: 112px; width: auto; align-self: center; margin-bottom: 12px; filter: drop-shadow(0 4px 10px rgba(0,0,0,.25)); }
@@ -457,3 +457,26 @@ body.sin-acceso .secciones-nav, body.sin-acceso .barra-der { visibility: hidden;
 .portada-limpia { padding-bottom: 48px; }
 .portada-limpia .portada-bandera { max-width: none; } .portada-bandera > span { white-space: nowrap; }
 @media (max-width: 560px) { .portada-limpia .portada-bandera { letter-spacing: .2em; } }
+
+/* fotos en alta: variantes de banda por página */
+.banda.foto-c295::before { background-image: url('../img/foto-c295.jpg'); background-position: center 55%; }
+.banda.foto-sierra::before { background-image: url('../img/foto-sierra.jpg'); background-position: center 38%; }
+/* portada: la foto de fondo es clara; velo algo más denso para que «Lauria» se lea */
+.portada-limpia::after { background:
+  radial-gradient(ellipse 65% 60% at 50% 48%, rgba(9,38,64,.55), rgba(8,33,56,.88) 78%),
+  linear-gradient(0deg, rgba(8,33,56,.9), transparent 45%); }
+/* escudo aún más grande */
+.portada-escudo { height: clamp(230px, 42vh, 420px); margin-bottom: 20px; }
+.portada-limpia .titular-lauria { font-size: clamp(100px, 18vw, 260px); }
+.portada-limpia { padding: 40px 0; }
+/* velos más ligeros: que se vean las fotos */
+.portada-limpia::after { background:
+  radial-gradient(ellipse 55% 55% at 50% 52%, rgba(8,33,56,.5), rgba(8,33,56,.18) 70%, rgba(8,33,56,.35) 100%),
+  linear-gradient(0deg, rgba(8,33,56,.75), transparent 35%),
+  linear-gradient(180deg, rgba(8,33,56,.35), transparent 25%); }
+.portada-limpia .titular-lauria { filter: drop-shadow(0 4px 24px rgba(4,18,32,.65)); }
+.portada-limpia .eyebrow { color: #E4C88F; text-shadow: 0 1px 10px rgba(4,18,32,.8); }
+.portada-escudo { filter: drop-shadow(0 12px 30px rgba(4,18,32,.6)); }
+.banda::after { background: linear-gradient(90deg, rgba(8,33,56,.9) 0%, rgba(9,38,64,.62) 45%, rgba(10,44,74,.12) 100%); }
+.banda .titular, .banda p { text-shadow: 0 1px 12px rgba(4,18,32,.55); }
+.acceso::after { background: radial-gradient(ellipse at center, rgba(10,44,74,.25), rgba(8,33,56,.7) 75%); }

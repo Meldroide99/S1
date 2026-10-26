@@ -13,7 +13,7 @@
   /** Pinta una página nueva dentro de <main> y devuelve su raíz (los escuchadores van en ella). */
   function pintar(html) { const r = document.createElement('div'); r.className = 'vista-pagina'; r.innerHTML = html; main.replaceChildren(r); return r; }
   /** Banda de cabecera con foto para las páginas interiores. */
-  const banda = (miga, titulo, texto) => `<section class="banda"><div class="contenedor">
+  const banda = (miga, titulo, texto, foto) => `<section class="banda${foto ? ' ' + foto : ''}"><div class="contenedor">
       <div class="miga">${miga}</div><h1 class="titular">${titulo}</h1>${texto ? `<p>${texto}</p>` : ''}</div></section>`;
 
   const SECCIONES = {
@@ -765,7 +765,7 @@
   function vistaAjustes() {
     const a = S.ajustes; const grupos = {};
     for (const d of C.AJUSTES_DEF) (grupos[d.grupo] = grupos[d.grupo] || []).push(d);
-    const raiz = pintar(`${banda('<a href="#/">Inicio</a> / <span>Datos de la unidad</span>', 'Datos de la <i>unidad</i>', 'Se escriben una vez y salen en todos los documentos. Se guardan solo en este navegador (no son datos personales). Si cambia el jefe de la unidad o el destinatario, se cambia aquí.')}<section class="pagina"><div class="contenedor" style="max-width:900px">
+    const raiz = pintar(`${banda('<a href="#/">Inicio</a> / <span>Datos de la unidad</span>', 'Datos de la <i>unidad</i>', 'Se escriben una vez y salen en todos los documentos. Se guardan solo en este navegador (no son datos personales). Si cambia el jefe de la unidad o el destinatario, se cambia aquí.', 'foto-c295')}<section class="pagina"><div class="contenedor" style="max-width:900px">
       ${Object.entries(grupos).map(([g, l]) => `<div class="tarjeta"><h2>${esc(g)}</h2><div class="campos" style="margin-top:12px">${l.map(d => `<div class="campo"><label for="a_${d.k}">${esc(d.et)}</label>${d.tipo === 'area' ? `<textarea id="a_${d.k}" data-aj="${d.k}" rows="${Math.max(6, String(a[d.k]).split('\n').length + 1)}" style="font:13px/1.6 var(--mono)">${esc(a[d.k])}</textarea><span class="ayuda">${esc(d.ayuda || 'Cada año: cambia o añade líneas. El texto antes de la barra «|» va en la columna FECHA.')}</span>` : `<input id="a_${d.k}" data-aj="${d.k}" value="${esc(a[d.k])}" placeholder="${esc(d.v)}">`}</div>`).join('')}</div></div>`).join('')}
       <div class="tarjeta"><h2>Restablecer</h2><p class="texto-gris">Vuelve a los valores de fábrica (RIPAC 4).</p><button class="btn suave" id="reset-aj">Restablecer valores</button></div>
     </div></section>`);
@@ -785,7 +785,7 @@
     const ejemplo = S.registros[0] || {};
     const recomendadas = ['escala', 'sexo', 'domicilio', 'fecha_ingreso', 'fin_compromiso'];
     const faltan = recomendadas.filter(k => !S.mapa[k]).map(k => C.CAMPOS_PERSONA.find(c => c.k === k).et);
-    const raiz = pintar(`${banda('<a href="#/">Inicio</a> / <span>Base de datos</span>', 'Base de <i>datos</i>', 'El Excel de personal: qué columna es cada dato.')}<section class="pagina"><div class="contenedor" style="max-width:980px">
+    const raiz = pintar(`${banda('<a href="#/">Inicio</a> / <span>Base de datos</span>', 'Base de <i>datos</i>', 'El Excel de personal: qué columna es cada dato.', 'foto-sierra')}<section class="pagina"><div class="contenedor" style="max-width:980px">
       ${bloqueCarga()}
       ${n ? `
       ${S.hojas.length > 1 ? `<div class="tarjeta"><h2>Hoja del Excel</h2><select id="hoja" class="campo" style="margin-top:10px;padding:8px;border:1px solid var(--linea-2);border-radius:4px">${S.hojas.map(h => `<option ${h.hoja === S.hoja ? 'selected' : ''}>${esc(h.hoja)}</option>`).join('')}</select></div>` : ''}
@@ -910,7 +910,7 @@
     const r = pintar(`<section class="acceso">
       <form class="acceso-caja" id="form-acceso" autocomplete="on" novalidate>
         <img src="assets/img/escudo-bpac.png" alt="Escudo del BILPAC II «Roger de Lauria»" width="400" height="468">
-        <span class="eyebrow">BILPAC II · «Roger de Lauria»</span>
+        <span class="eyebrow">Segunda Bandera «Roger de Lauria» de Paracaidistas</span>
         <h1>II<em>BPAC</em></h1>
         <p>Acceso a la documentación</p>
         <label for="ac-usuario">Usuario</label>
