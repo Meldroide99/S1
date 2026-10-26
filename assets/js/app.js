@@ -187,11 +187,11 @@
     const total = docs.length;
     const raiz = pintar(`
     <section class="portada portada-limpia"><div class="contenedor portada-centro">
-      <img class="portada-escudo" src="assets/img/escudo-bpac.png" alt="Escudo del BILPAC II «Roger de Lauria»" width="400" height="468">
+      <div class="escudo-halo"><img class="portada-escudo" src="assets/img/escudo-bpac.png" alt="Escudo del BILPAC II «Roger de Lauria»" width="400" height="468"></div>
       <span class="eyebrow portada-bandera"><span>Segunda Bandera «Roger de Lauria»</span> <span>de Paracaidistas</span></span>
       <h1 class="titular titular-lauria">Lauria</h1>
     </div></section>
-    <section class="bloque bloque-datos" id="paso-datos"><div class="contenedor datos-fila">
+    <section class="bloque bloque-datos bloque-foto fondo-sierra" id="paso-datos"><div class="contenedor datos-fila">
       <div class="datos-texto">
         <span class="eyebrow">Paso 1 · Base de datos</span>
         <h2 class="subtitulo" style="margin-top:8px">Cómo funciona</h2>
@@ -204,14 +204,14 @@
       </div>
       ${bloqueCarga(true)}
     </div></section>
-    <section class="bloque" style="padding-top:8px"><div class="contenedor">
+    <section class="bloque bloque-foto fondo-c295" style="padding-top:8px"><div class="contenedor">
       <div class="bloque-cab"><div><span class="eyebrow">Paso 2 · Sección</span><h2 class="subtitulo" style="margin-top:8px">Cuatro carpetas de documentación</h2></div></div>
       <div class="secciones-grid">${Object.entries(SECCIONES).map(([k, s]) => {
         const n = docs.filter(d => d.seccion === k).length;
         return `<a class="sec-card ${n ? '' : 'vacia'}" href="#/${k}"><span class="flecha">${ico.flecha}</span><div class="num">S<i>${k.slice(1)}</i></div><h3>${s.nombre}</h3><p>${n ? n + ' modelos' : 'Pendiente de modelos'} · ${s.desc}</p></a>`;
       }).join('')}</div>
     </div></section>
-    <section class="bloque" style="padding-top:0"><div class="contenedor">
+    <section class="bloque bloque-foto fondo-puerta" style="padding-top:0"><div class="contenedor">
       <div class="bloque-cab"><div><span class="eyebrow">Paso 3 · Modelo</span><h2 class="subtitulo" style="margin-top:8px">Todos los modelos</h2></div>
         <label class="buscador-docs">${ico.buscar}<input id="filtro-docs" type="search" placeholder="Buscar modelo… (pulsa /)" autocomplete="off"><span class="sr">Buscar modelo</span></label></div>
       <div id="lista-docs">${listaDocs(docs)}</div>
