@@ -159,10 +159,10 @@
   $('#pildora-datos').addEventListener('click', () => { if (S.personas.length) location.hash = '#/datos'; else $('#archivo-excel').click(); });
 
   // ======================================================================= portada
-  function bloqueCarga() {
+  function bloqueCarga(sinEtiqueta) {
     const n = S.personas.length;
     return `<div class="carga">
-      <span class="eyebrow">Paso 1 · Base de datos</span>
+      ${sinEtiqueta ? '' : '<span class="eyebrow">Paso 1 · Base de datos</span>'}
       <h2>${n ? 'Excel cargado' : 'Carga el Excel de personal'}</h2>
       ${n ? `<div class="cargado-resumen"><strong>${n}</strong><div><b>${esc(S.archivo)}</b><br>Hoja «${esc(S.hoja)}» · ${S.columnas.length} columnas</div></div>
         <div class="acciones-carga"><a class="btn suave peq" href="#/datos">Ver columnas</a><button class="btn suave peq" data-acc="cambiar">Cambiar Excel</button><button class="btn suave peq" data-acc="olvidar">Borrar de la memoria</button></div>`
@@ -186,21 +186,27 @@
     const docs = todosDocs();
     const total = docs.length;
     const raiz = pintar(`
-    <section class="portada"><div class="contenedor portada-grid">
-      <div>
-        <div class="portada-marca"><img src="assets/img/escudo-bpac.png" alt="Escudo del BILPAC II «Roger de Lauria»" width="400" height="468">
-          <div><span class="eyebrow">BILPAC II · «Roger de Lauria»</span><div class="portada-nombre">II<em>BPAC</em></div></div></div>
-        <h1 class="titular titular-lauria">Lauria</h1>
-        <p class="lead">Elige el modelo, escribe dos letras del apellido y el documento se rellena solo con los datos del Excel. Revisa la hoja tal como saldrá impresa y descárgala en Word o PDF.</p>
+    <section class="portada portada-limpia"><div class="contenedor portada-centro">
+      <img class="portada-escudo" src="assets/img/escudo-bpac.png" alt="Escudo del BILPAC II «Roger de Lauria»" width="400" height="468">
+      <span class="eyebrow">BILPAC II · «Roger de Lauria»</span>
+      <h1 class="titular titular-lauria">Lauria</h1>
+      <div class="portada-pie"><span>II<em>BPAC</em></span><i aria-hidden="true"></i><span>Documentación S1 · S2 · S3 · S4</span></div>
+      <a class="portada-bajar" href="#paso-datos" aria-label="Bajar a los modelos" data-bajar="1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></a>
+    </div></section>
+    <section class="bloque bloque-datos" id="paso-datos"><div class="contenedor datos-fila">
+      <div class="datos-texto">
+        <span class="eyebrow">Paso 1 · Base de datos</span>
+        <h2 class="subtitulo" style="margin-top:8px">Cómo funciona</h2>
+        <p class="texto-gris">Elige el modelo, escribe dos letras del apellido y el documento se rellena solo con los datos del Excel. Revisa la hoja tal como saldrá impresa y descárgala en Word o PDF.</p>
         <div class="cifras">
           <div class="cifra"><strong>${total}</strong><span>Modelos</span></div>
           <div class="cifra"><strong>${S.personas.length || '—'}</strong><span>Personas cargadas</span></div>
           <div class="cifra"><strong>0</strong><span>Datos enviados a internet</span></div>
         </div>
       </div>
-      ${bloqueCarga()}
+      ${bloqueCarga(true)}
     </div></section>
-    <section class="bloque"><div class="contenedor">
+    <section class="bloque" style="padding-top:8px"><div class="contenedor">
       <div class="bloque-cab"><div><span class="eyebrow">Paso 2 · Sección</span><h2 class="subtitulo" style="margin-top:8px">Cuatro carpetas de documentación</h2></div></div>
       <div class="secciones-grid">${Object.entries(SECCIONES).map(([k, s]) => {
         const n = docs.filter(d => d.seccion === k).length;
@@ -213,6 +219,8 @@
       <div id="lista-docs">${listaDocs(docs)}</div>
     </div></section>`);
     enlazarCarga(raiz);
+    // la flecha baja suave sin cambiar la ruta (#/)
+    $('[data-bajar]', raiz).addEventListener('click', e => { e.preventDefault(); $('#paso-datos').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); });
     $('#filtro-docs').addEventListener('input', e => {
       const q = C.norm(e.target.value);
       $('#lista-docs').innerHTML = listaDocs(docs.filter(d => C.norm(d.titulo + ' ' + d.grupo + ' ' + (d.resumen || '') + ' ' + d.seccion).includes(q))) || '<div class="vacio"><strong>Nada con ese nombre</strong>Prueba con otra palabra.</div>';

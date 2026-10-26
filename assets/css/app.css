@@ -423,3 +423,30 @@ body.sin-acceso .secciones-nav, body.sin-acceso .barra-der { visibility: hidden;
 .acceso-caja .btn { margin-top: 4px; padding: 12px 18px; font-size: 14px; }
 .temblor { animation: temblor .4s; }
 @keyframes temblor { 20%, 60% { transform: translateX(-7px); } 40%, 80% { transform: translateX(7px); } }
+
+/* ======================================================= portada limpia y a pantalla completa */
+.portada-limpia { min-height: calc(100vh - var(--barra)); min-height: calc(100svh - var(--barra)); display: flex; align-items: center; padding: 48px 0 70px; }
+.portada-limpia::after { background:
+  radial-gradient(ellipse 70% 60% at 50% 45%, rgba(10,44,74,.45), rgba(8,33,56,.9) 75%),
+  linear-gradient(0deg, rgba(8,33,56,.85), transparent 40%); }
+.portada-centro { display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%; }
+.portada-escudo { height: clamp(130px, 22vh, 210px); width: auto; filter: drop-shadow(0 10px 24px rgba(0,0,0,.5)); margin-bottom: 18px; }
+.portada-limpia .eyebrow { font-size: 12px; letter-spacing: .32em; }
+.portada-limpia .titular-lauria { font-size: clamp(110px, 21vw, 300px); line-height: .82; margin: 10px 0 0; letter-spacing: -.025em; }
+.portada-pie { display: flex; align-items: center; gap: 16px; margin-top: 26px; font-size: 12px; font-weight: 700; letter-spacing: .26em; text-transform: uppercase; color: #A9BCD0; flex-wrap: wrap; justify-content: center; }
+.portada-pie span:first-child { font: 500 24px/1 var(--serif); letter-spacing: .04em; color: var(--oro-claro); text-transform: none; }
+.portada-pie span:first-child em { font-style: normal; color: #F4E7C9; }
+.portada-pie i { width: 44px; height: 1px; background: var(--oro-claro); opacity: .7; }
+.portada-bajar { position: absolute; left: 50%; bottom: -46px; transform: translateX(-50%); width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(184,148,94,.6); display: grid; place-items: center; color: var(--oro-claro); animation: flotar 2.4s ease-in-out infinite; }
+.portada-bajar:hover { background: rgba(184,148,94,.15); }
+.portada-bajar svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.portada-centro { position: relative; }
+@keyframes flotar { 50% { transform: translate(-50%, 6px); } }
+/* paso 1: el Excel, debajo de la portada */
+.bloque-datos { padding-top: 54px; }
+.datos-fila { display: grid; grid-template-columns: 1fr minmax(320px, 470px); gap: 48px; align-items: center; }
+.datos-texto p { max-width: 52ch; margin: 14px 0 0; font-size: 15.5px; }
+.bloque-datos .cifra strong { color: var(--azul-noche); }
+@media (max-width: 860px) { .datos-fila { grid-template-columns: 1fr; gap: 26px; } .portada-limpia { padding-bottom: 80px; } }
+@media (max-width: 560px) { .portada-pie i { display: none; } .portada-pie { gap: 8px; flex-direction: column; } }
+#paso-datos { scroll-margin-top: calc(var(--barra) + 8px); }
