@@ -551,3 +551,29 @@ body.sin-acceso .secciones-nav, body.sin-acceso .barra-der { visibility: hidden;
 .fondo-sec-s3::before { background-image: url('../img/foto-puerta.jpg'); background-position: center 40%; opacity: .38; }
 .fondo-sec-s4::before { background-image: url('../img/foto-sierra.jpg'); background-position: center 45%; }
 .bloque-foto .vacio { background: rgba(255,255,255,.92); backdrop-filter: blur(6px); }
+
+/* ======================================================= cabeceras cinematográficas (como «Vida sin fricción») */
+.cab-px { position: relative; overflow: hidden; isolation: isolate; color: #fff; background: var(--azul-noche); }
+.cab-px-fondo { position: absolute; inset: 0; z-index: -2; background-size: cover; background-position: center 45%; transform: scale(1.08); transform-origin: center top; will-change: transform; }
+.portada-limpia::before { display: none; }
+.portada-limpia::after { z-index: -1; }
+.cab-px-texto { will-change: opacity, transform; }
+.cab-seccion { min-height: calc(100vh - var(--barra)); min-height: calc(100svh - var(--barra)); display: flex; align-items: flex-end; padding: 0 0 clamp(56px, 10vh, 110px); }
+.cab-seccion .cab-px-velo { position: absolute; inset: 0; z-index: -1; background:
+  linear-gradient(90deg, rgba(8,33,56,.78) 0%, rgba(9,38,64,.42) 45%, rgba(10,44,74,.08) 85%),
+  linear-gradient(0deg, rgba(8,33,56,.7), transparent 45%), linear-gradient(180deg, rgba(8,33,56,.35), transparent 25%); }
+.cab-seccion .miga, .cab-seccion .miga a { color: #C9D6E3; text-shadow: 0 1px 10px rgba(4,18,32,.7); }
+.cab-titulo { font: 400 clamp(64px, 11.5vw, 190px)/.88 var(--serif) !important; letter-spacing: -.025em; margin: 18px 0 0 -4px; color: #fff;
+  text-shadow: 0 6px 30px rgba(4,18,32,.55); }
+.cab-titulo i { color: var(--oro-claro); }
+.cab-titulo .punto { color: rgba(255,255,255,.55); }
+.cab-sub { font-size: clamp(17px, 1.7vw, 23px); line-height: 1.45; color: #E3EAF2; max-width: 40ch; margin: 22px 0 0; text-shadow: 0 1px 14px rgba(4,18,32,.75); }
+.cab-desliza { display: inline-flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 44px; font-size: 11px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: #C9D6E3; }
+.cab-desliza i { width: 1px; height: 46px; background: linear-gradient(180deg, var(--oro-claro), transparent); animation: desliza 2.2s ease-in-out infinite; transform-origin: top; }
+@keyframes desliza { 0% { transform: scaleY(0); opacity: 1; } 60% { transform: scaleY(1); opacity: 1; } 100% { transform: scaleY(1); opacity: 0; } }
+.cab-seccion + .pagina { padding-top: 46px; }
+/* aparición del contenido al llegar a él */
+.revelar { opacity: 0; transform: translateY(26px); transition: opacity .8s var(--curva) var(--retardo, 0ms), transform .8s var(--curva) var(--retardo, 0ms); }
+.revelar.visible { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .revelar { opacity: 1; transform: none; } .cab-desliza i { animation: none; } }
+@media (max-width: 560px) { .cab-titulo { font-size: clamp(54px, 15vw, 90px) !important; } .cab-titulo .punto { display: none; } .cab-titulo i { display: block; } }

@@ -186,7 +186,7 @@
     const docs = todosDocs();
     const total = docs.length;
     const raiz = pintar(`
-    <section class="portada portada-limpia"><div class="contenedor portada-centro">
+    <section class="portada portada-limpia cab-px" data-px><div class="cab-px-fondo" style="background-image:url('assets/img/foto-lanzamiento-masivo.jpg')"></div><div class="contenedor portada-centro cab-px-texto">
       <div class="escudo-halo"><img class="portada-escudo" src="assets/img/escudo-bpac.png" alt="Escudo del BILPAC II «Roger de Lauria»" width="400" height="468"></div>
       <span class="eyebrow portada-bandera"><span>Segunda Bandera «Roger de Lauria»</span> <span>de Paracaidistas</span></span>
       <h1 class="titular titular-lauria">Lauria</h1>
@@ -217,9 +217,11 @@
       <div id="lista-docs">${listaDocs(docs)}</div>
     </div></section>`);
     enlazarCarga(raiz);
+    animarEntrada(raiz);
     $('#filtro-docs').addEventListener('input', e => {
       const q = C.norm(e.target.value);
       $('#lista-docs').innerHTML = listaDocs(docs.filter(d => C.norm(d.titulo + ' ' + d.grupo + ' ' + (d.resumen || '') + ' ' + d.seccion).includes(q))) || '<div class="vacio"><strong>Nada con ese nombre</strong>Prueba con otra palabra.</div>';
+      requestAnimationFrame(moverCabeceras);
     });
   }
   function enlazarCarga(raiz) {
@@ -233,11 +235,20 @@
 
   function vistaSeccion(sec) {
     const s = SECCIONES[sec]; const docs = todosDocs().filter(d => d.seccion === sec);
-    pintar(`${banda(`<a href="#/">Inicio</a> / <span>${s.n}</span>`, `${s.n} · <i>${s.nombre}</i>`, s.desc, { s1: '', s2: 'foto-c295', s3: 'foto-puerta', s4: 'foto-sierra' }[sec])}<section class="pagina bloque-foto fondo-sec-${sec}"><div class="contenedor">
+    const foto = { s1: 'foto-a400m-salto', s2: 'foto-c295', s3: 'foto-puerta', s4: 'foto-sierra' }[sec];
+    const raiz = pintar(`<section class="cab-px cab-seccion" data-px>
+      <div class="cab-px-fondo" style="background-image:url('assets/img/${foto}.jpg')"></div><div class="cab-px-velo"></div>
+      <div class="contenedor cab-px-texto">
+        <div class="miga"><a href="#/">Inicio</a> / <span>${s.n}</span></div>
+        <h1 class="titular cab-titulo">${s.n} <span class="punto">·</span> <i>${s.nombre}</i></h1>
+        <p class="cab-sub">${s.desc}</p>
+        <span class="cab-desliza" aria-hidden="true">Desliza<i></i></span>
+      </div></section><section class="pagina bloque-foto fondo-sec-${sec}"><div class="contenedor">
       ${docs.length ? listaDocs(docs) : `<div class="vacio" style="margin-top:26px"><strong>Todavía no hay modelos de ${s.n}</strong>
         Pásame los documentos y los preparo como los de S1. Mientras, puedes cargar una plantilla propia.<br><br>
         <a class="btn principal" href="#/propias">Añadir plantilla propia</a></div>`}
     </div></section>`);
+    animarEntrada(raiz);
   }
 
   // ======================================================================= editor
@@ -845,6 +856,44 @@
       const b = e.target.closest('[data-borrar]');
       if (b && confirm('¿Borrar esta plantilla de este navegador?')) { C.guardarLocal(CLAVE_PROPIAS, propias().filter(p => p.id !== b.dataset.borrar)); vistaPropias(); }
     });
+  }
+
+  // ======================================================================= movimiento al bajar
+  // Como en la web de «Vida sin fricción»: la foto de la cabecera baja más despacio y crece,
+  // el título se desvanece y el contenido aparece al llegar a él. Respeta «reducir movimiento».
+  const quieto = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let rafPx = 0;
+  function moverCabeceras() {
+    rafPx = 0;
+    if (quieto()) return;
+    for (const sec of $$('[data-px]')) {
+      const r = sec.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight) continue;
+      const q = Math.min(1, Math.max(0, -r.top / Math.max(1, r.height)));
+      const f = $('.cab-px-fondo', sec), t = $('.cab-px-texto', sec);
+      if (f) f.style.transform = `translate3d(0, ${(q * 32).toFixed(2)}%, 0) scale(${(1.08 + q * 0.12).toFixed(3)})`;
+      if (t) { t.style.opacity = String(Math.max(0, 1 - q * 1.7)); t.style.transform = `translate3d(0, ${(-q * 70).toFixed(1)}px, 0)`; }
+    }
+  }
+  addEventListener('scroll', () => { if (!rafPx) rafPx = requestAnimationFrame(moverCabeceras); }, { passive: true });
+  addEventListener('resize', () => { if (!rafPx) rafPx = requestAnimationFrame(moverCabeceras); });
+  let observador = null;
+  function animarEntrada(raiz) {
+    requestAnimationFrame(moverCabeceras);
+    const els = $$('.grupo-docs > h3, .doc-card, .sec-card, .carga, .datos-texto, .bloque-cab, .vacio', raiz);
+    if (quieto() || !('IntersectionObserver' in window)) return;
+    if (observador) observador.disconnect();
+    observador = new IntersectionObserver(ents => {
+      for (const e of ents) if (e.isIntersecting) { e.target.classList.add('visible'); observador.unobserve(e.target); }
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    let i = 0, prevTop = null;
+    for (const el of els) {
+      const top = el.offsetTop;
+      i = top === prevTop ? i + 1 : 0; prevTop = top; // escalonado dentro de cada fila
+      el.style.setProperty('--retardo', `${Math.min(i, 5) * 70}ms`);
+      el.classList.add('revelar');
+      observador.observe(el);
+    }
   }
 
   // ======================================================================= rutas
