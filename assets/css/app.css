@@ -541,3 +541,13 @@ body.sin-acceso .secciones-nav, body.sin-acceso .barra-der { visibility: hidden;
   radial-gradient(ellipse 55% 55% at 50% 52%, rgba(8,33,56,.42), rgba(8,33,56,.1) 70%, rgba(8,33,56,.25) 100%),
   linear-gradient(0deg, rgba(8,33,56,.65), transparent 32%),
   linear-gradient(180deg, rgba(8,33,56,.3), transparent 22%); }
+/* la misma foto de la cabecera, difuminada detrás de los modelos de cada sección */
+.pagina.bloque-foto { min-height: calc(100vh - var(--barra) - 200px); padding-bottom: 70px; }
+.pagina.bloque-foto::before { opacity: .45; background-attachment: fixed; background-size: cover;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 80%, transparent 100%);
+          mask-image: linear-gradient(180deg, #000 0%, #000 80%, transparent 100%); }
+.fondo-sec-s1::before { background-image: url('../img/foto-a400m-salto.jpg'); background-position: center 45%; }
+.fondo-sec-s2::before { background-image: url('../img/foto-c295.jpg'); background-position: center 50%; }
+.fondo-sec-s3::before { background-image: url('../img/foto-puerta.jpg'); background-position: center 40%; opacity: .38; }
+.fondo-sec-s4::before { background-image: url('../img/foto-sierra.jpg'); background-position: center 45%; }
+.bloque-foto .vacio { background: rgba(255,255,255,.92); backdrop-filter: blur(6px); }
