@@ -4,6 +4,8 @@
 *.xls
 *.csv
 *.ods
+# ...salvo las plantillas vacias de las listas (no llevan datos de nadie)
+!s*/plantillas/*.xlsx
 # Temporales de Office y del sistema
 ~$*
 .~lock*

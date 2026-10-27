@@ -27,7 +27,9 @@
   const S = {
     ajustes: C.ajustes(),
     archivo: '', hojas: [], hoja: '', columnas: [], registros: [], mapa: {}, personas: [], ficticios: false,
-    valores: {}, tablas: {}, personaDoc: {}, modo: {}, lote: {}, zoom: 'ajustar',
+    valores: {}, tablas: {}, personaDoc: {}, modo: {}, zoom: 'ajustar',
+    seleccion: new Set(), // personas marcadas en «Varias a la vez» y en las listas: vale para todos los modelos
+    listas: {},           // filas corregidas o escritas a mano en los documentos de tipo lista
     version: 0, etiquetas: {}, ultimo: null,
   };
 
@@ -47,6 +49,7 @@
     pdf: '<svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M9 17v-5h1.5a1.5 1.5 0 0 1 0 3H9"/></svg>',
     imprimir: '<svg viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg>',
     candado: '<svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
+    excel: '<svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="m9 12 5 6M14 12l-5 6"/></svg>',
     zip: '<svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M10 5h1M10 8h1M10 11h1M10 14h1v3h-1z"/></svg>',
   };
 
@@ -110,11 +113,11 @@
   }
   function rehacerPersonas() {
     S.personas = S.registros.map(r => C.persona(r, S.mapa)).filter(p => p.nombre_completo || p.dni);
-    S.personaDoc = {}; S.lote = {};
+    S.personaDoc = {}; S.seleccion = new Set(); for (const k in S.listas) S.listas[k].ed = {};
     pintarPildora(); router();
   }
   function olvidarDatos() {
-    Object.assign(S, { archivo: '', hojas: [], hoja: '', columnas: [], registros: [], mapa: {}, personas: [], personaDoc: {}, lote: {}, valores: {}, tablas: {}, ficticios: false });
+    Object.assign(S, { archivo: '', hojas: [], hoja: '', columnas: [], registros: [], mapa: {}, personas: [], personaDoc: {}, seleccion: new Set(), listas: {}, valores: {}, tablas: {}, ficticios: false });
     pintarPildora(); router(); toast('Datos de personas borrados de la memoria.');
   }
   function datosFicticios() {
@@ -129,7 +132,10 @@
       const n = nombres[r(nombres.length)], e = bolsa[r(bolsa.length)], num = 10000000 + r(89999999);
       regs.push({ 'NOMBRE': n, '1º APELLIDO': apell[r(apell.length)], '2º APELLIDO': apell[r(apell.length)], 'EMPLEO': e[0], 'ESCALA': e[1],
         'NUMERO DNI': `${num}${L[num % 23]}`, 'SEXO': '',
-        'CIA': ['10', '11', '12', 'PLMM'][r(4)], 'TELEFONO': `6${String(10000000 + r(89999999))}`, 'RESIDENCIA 1': `C/ Ejemplo ${1 + r(80)}, ${1 + r(5)}º ${'ABCD'[r(4)]}, 28860 Paracuellos de Jarama (Madrid)` });
+        'CIA': ['10', '11', '12', 'PLMM'][r(4)], 'TELEFONO': `6${String(10000000 + r(89999999))}`, 'RESIDENCIA 1': `C/ Ejemplo ${1 + r(80)}, ${1 + r(5)}º ${'ABCD'[r(4)]}, 28860 Paracuellos de Jarama (Madrid)`,
+        'HPS NACIONAL / OTAN': r(5) ? ['RESERVADO / NATO SECRET', 'CONFIDENCIAL / NATO CONFIDENTIAL', 'SECRETO / COSMIC TOP SECRET'][r(3)] : '',
+        'VALIDEZ HPS': '' });
+      const ult = regs[regs.length - 1]; if (ult['HPS NACIONAL / OTAN']) ult['VALIDEZ HPS'] = `${String(1 + r(28)).padStart(2, '0')}/${String(1 + r(12)).padStart(2, '0')}/${2025 + r(5)}`;
     }
     for (const x of regs) x['SEXO'] = ['LUCÍA', 'MARÍA', 'ANDREA', 'SARA', 'CARMEN', 'IRENE', 'PAULA', 'ELENA', 'MARTA', 'NURIA'].includes(x['NOMBRE']) ? 'MUJER' : 'HOMBRE';
     const cols = Object.keys(regs[0]);
@@ -175,7 +181,7 @@
     const s = SECCIONES[d.seccion];
     return `<a class="doc-card" href="#/${d.seccion}/${d.id}"><span class="doc-mini" aria-hidden="true"></span><span>
       <h4>${esc(d.titulo)}</h4><p>${esc(d.resumen || '')}</p>
-      <span class="meta"><span class="chip">${s.n}</span>${d.lote ? '<span class="chip oro">Varias personas</span>' : ''}</span></span></a>`;
+      <span class="meta"><span class="chip">${s.n}</span>${d.lista ? '<span class="chip oro">Lista · Excel, Word y PDF</span>' : '<span class="chip oro">Una o varias personas</span>'}</span></span></a>`;
   }
   function listaDocs(docs) {
     if (!docs.length) return '';
@@ -391,10 +397,10 @@
           <div class="miga"><a href="#/">Inicio</a> / <a href="#/${def.seccion}">${sec.n} · ${sec.nombre}</a> / <span>${esc(def.grupo || '')}</span></div>
           <h1>${esc(def.titulo)}</h1>
           <div class="norma"><span class="chip">Ref.</span><span>${esc(def.norma || '')}</span></div>
-          <div class="modo" role="group" aria-label="Para quién">
+          ${def.lista ? `<p class="lista-nota">Un solo documento con todas las personas que marques (una fila cada una). Sale en Excel, Word y PDF.</p>` : `<div class="modo" role="group" aria-label="Para quién">
             <button type="button" data-modo="una" aria-pressed="${modo === 'una'}">Una persona</button>
             <button type="button" data-modo="varias" aria-pressed="${modo === 'varias'}">Varias a la vez</button>
-          </div>
+          </div>`}
         </div>
         <div class="panel-cuerpo">
           <div class="seccion-form" id="sec-persona"></div>
@@ -430,35 +436,15 @@
   function pintarPersona(ctx) {
     const { def, tags } = ctx; const modo = S.modo[clave(def)] || 'una';
     const cont = $('#sec-persona');
+    if (def.lista) return pintarPanelLista(ctx);
     if (modo === 'varias') {
       if (!S.personas.length) {
         cont.innerHTML = `<h2><span class="n">1</span>Personas</h2><div class="vacio" style="padding:18px"><strong style="font-size:19px">Necesitas el Excel</strong>Para sacar el documento de muchas personas a la vez, carga primero el Excel de personal.<br><br><button class="btn principal peq" type="button" data-acc2="cargar">Cargar Excel</button> <button class="enlace" data-acc2="ficticios">o datos inventados</button></div>`;
         return;
       }
-      const sel = S.lote[clave(def)] || (S.lote[clave(def)] = new Set());
-      const cias = [...new Set(S.personas.map(p => p.cia).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
-      const emps = [...new Set(S.personas.map(p => p.empleo_abrev || p.empleo).filter(Boolean))];
-      cont.innerHTML = `<h2><span class="n">1</span>Personas</h2>
-        <div class="lote-filtros">
-          <select id="lote-cia" aria-label="Compañía"><option value="">Todas las CÍAS</option>${cias.map(c => `<option>${esc(c)}</option>`).join('')}</select>
-          <select id="lote-emp" aria-label="Empleo"><option value="">Todos los empleos</option>${emps.map(c => `<option>${esc(c)}</option>`).join('')}</select>
-          <input id="lote-q" placeholder="Filtrar…" aria-label="Filtrar por nombre">
-        </div>
-        <div class="lote-lista" id="lote-lista"></div>
-        <div class="lote-pie"><span id="lote-n"></span><span><button class="enlace" type="button" id="lote-todos">Marcar los visibles</button> · <button class="enlace" type="button" id="lote-ninguno">Ninguno</button></span></div>
-        <p class="sin-excel">Los datos de abajo valen para todos. Lo personal (nombre, DNI, empleo, escala…) sale del Excel de cada uno.</p>`;
-      const pintarLista = () => {
-        const cia = $('#lote-cia').value, emp = $('#lote-emp').value, q = C.norm($('#lote-q').value);
-        const vis = S.personas.filter(p => (!cia || p.cia === cia) && (!emp || (p.empleo_abrev || p.empleo) === emp) && (!q || p._busqueda.includes(q)));
-        $('#lote-lista').innerHTML = vis.map(p => { const i = S.personas.indexOf(p); return `<label><input type="checkbox" data-lote="${i}" ${sel.has(i) ? 'checked' : ''}><span class="emp">${esc(p.empleo_abrev || '')}</span><span>${esc(p.apellidos_nombre)}</span><span class="dni">${esc(p.dni)}</span></label>`; }).join('') || '<div class="nada" style="padding:12px;color:var(--gris)">Nadie con ese filtro.</div>';
-        $('#lote-n').textContent = `${sel.size} seleccionadas`;
-        cont._visibles = vis;
-      };
-      ['lote-cia', 'lote-emp', 'lote-q'].forEach(id => $('#' + id).addEventListener('input', pintarLista));
-      $('#lote-lista').addEventListener('change', e => { const i = +e.target.dataset.lote; e.target.checked ? sel.add(i) : sel.delete(i); $('#lote-n').textContent = `${sel.size} seleccionadas`; pintarAcciones(ctx); programar(ctx); });
-      $('#lote-todos').addEventListener('click', () => { cont._visibles.forEach(p => sel.add(S.personas.indexOf(p))); pintarLista(); pintarAcciones(ctx); programar(ctx); });
-      $('#lote-ninguno').addEventListener('click', () => { sel.clear(); pintarLista(); pintarAcciones(ctx); programar(ctx); });
-      pintarLista();
+      cont.innerHTML = `<h2><span class="n">1</span>Personas</h2><div id="selector"></div>
+        <p class="sin-excel">Los datos de abajo valen para todos. Lo personal (nombre, DNI, empleo, escala…) sale del Excel de cada uno. La selección se mantiene al cambiar de modelo.</p>`;
+      pintarSelector($('#selector', cont), () => { pintarAcciones(ctx); programar(ctx); });
       return;
     }
     const p = personaDe(def);
@@ -508,6 +494,66 @@
     const q = $('#limpiar-persona'); if (q) q.addEventListener('click', () => { S.personaDoc[clave(def)] = vaciaPersona(); limpiarValoresPersona(ctx); pintarPersona(ctx); pintarCampos(ctx); programar(ctx, 0); });
     if (S.personas.length && !p.nombre) setTimeout(() => inp.focus(), 50);
   }
+  // ------------------------------------------------------------------ selección de muchas personas
+  /** Lista con casillas, filtros por CÍA y empleo, y «pegar una lista» de DNI o nombres.
+   *  La selección (S.seleccion) es común a todos los modelos. */
+  function pintarSelector(cont, alCambiar) {
+    const sel = S.seleccion;
+    const cias = [...new Set(S.personas.map(p => p.cia).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+    const emps = [...new Set(S.personas.map(p => p.empleo_abrev || p.empleo).filter(Boolean))]
+      .sort((a, b) => C.ordenEmpleo(b) - C.ordenEmpleo(a));
+    cont.innerHTML = `<div class="lote-filtros">
+        <select id="lote-cia" aria-label="Compañía"><option value="">Todas las CÍAS</option>${cias.map(c => `<option>${esc(c)}</option>`).join('')}</select>
+        <select id="lote-emp" aria-label="Empleo"><option value="">Todos los empleos</option>${emps.map(c => `<option>${esc(c)}</option>`).join('')}</select>
+        <input id="lote-q" placeholder="Filtrar…" aria-label="Filtrar por nombre o DNI">
+      </div>
+      <div class="lote-lista" id="lote-lista"></div>
+      <div class="lote-pie"><span id="lote-n"></span><span><button class="enlace" type="button" id="lote-todos">Marcar los visibles</button> · <button class="enlace" type="button" id="lote-ninguno">Ninguno</button></span></div>
+      <details class="lote-pegar"><summary>Pegar una lista de DNI o nombres</summary>
+        <textarea id="lote-texto" rows="4" placeholder="Uno por línea. Vale copiar una columna entera del Excel, de un correo o de un mensaje."></textarea>
+        <div class="lote-pegar-pie"><button class="btn suave peq" type="button" id="lote-marcar">Marcar estos</button><span id="lote-res"></span></div>
+      </details>`;
+    let visibles = [];
+    const contar = () => { $('#lote-n', cont).textContent = `${sel.size} ${sel.size === 1 ? 'seleccionada' : 'seleccionadas'}`; };
+    const pintarLista = () => {
+      const cia = $('#lote-cia', cont).value, emp = $('#lote-emp', cont).value, q = C.norm($('#lote-q', cont).value);
+      visibles = S.personas.filter(p => (!cia || p.cia === cia) && (!emp || (p.empleo_abrev || p.empleo) === emp) && (!q || p._busqueda.includes(q)));
+      $('#lote-lista', cont).innerHTML = visibles.map(p => { const i = S.personas.indexOf(p); return `<label><input type="checkbox" data-lote="${i}" ${sel.has(i) ? 'checked' : ''}><span class="emp">${esc(p.empleo_abrev || '')}</span><span>${esc(p.apellidos_nombre)}</span><span class="dni">${esc(p.dni)}</span></label>`; }).join('') || '<div class="nada" style="padding:12px;color:var(--gris)">Nadie con ese filtro.</div>';
+      contar();
+    };
+    ['lote-cia', 'lote-emp', 'lote-q'].forEach(id => $('#' + id, cont).addEventListener('input', pintarLista));
+    $('#lote-lista', cont).addEventListener('change', e => { const i = +e.target.dataset.lote; e.target.checked ? sel.add(i) : sel.delete(i); contar(); alCambiar(); });
+    $('#lote-todos', cont).addEventListener('click', () => { visibles.forEach(p => sel.add(S.personas.indexOf(p))); pintarLista(); alCambiar(); });
+    $('#lote-ninguno', cont).addEventListener('click', () => { sel.clear(); pintarLista(); alCambiar(); });
+    $('#lote-marcar', cont).addEventListener('click', () => {
+      const { marcadas, fuera } = marcarPegados($('#lote-texto', cont).value);
+      pintarLista(); alCambiar();
+      $('#lote-res', cont).innerHTML = `${marcadas} marcadas` + (fuera.length ? ` · <b>no encontradas (${fuera.length}):</b> ${esc(fuera.slice(0, 8).join('; '))}${fuera.length > 8 ? '…' : ''}` : '');
+    });
+    pintarLista();
+  }
+  /** Marca a las personas de un texto pegado: DNI (con o sin letra) o nombre. */
+  function marcarPegados(texto) {
+    const limpio = v => String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+    const porDni = new Map();
+    S.personas.forEach((p, i) => { const d = limpio(p.dni); if (d) { porDni.set(d, i); porDni.set(d.replace(/[A-Z]$/, ''), i); } });
+    let marcadas = 0; const fuera = [];
+    for (const linea of String(texto).split(/[\n;\t]+/).map(x => x.trim()).filter(Boolean)) {
+      const d = limpio(linea);
+      let i = /\d{6,}/.test(d) ? (porDni.get(d) ?? porDni.get(d.replace(/[A-Z]$/, ''))) : undefined;
+      if (i === undefined) {
+        const r = C.buscarPersonas(S.personas, linea);
+        const q = C.norm(linea).split(' ').filter(Boolean);
+        const exactos = r.filter(p => q.every(t => p._busqueda.split(' ').includes(t)));
+        const uno = exactos.length === 1 ? exactos[0] : (r.length === 1 ? r[0] : null);
+        if (uno) i = S.personas.indexOf(uno);
+      }
+      if (i === undefined || i < 0) { fuera.push(linea); continue; }
+      if (!S.seleccion.has(i)) { S.seleccion.add(i); marcadas++; }
+    }
+    return { marcadas, fuera };
+  }
+
   // al cambiar de persona, los campos que dependen de ella vuelven a su valor por defecto
   function limpiarValoresPersona(ctx) {
     for (const c of camposDe(ctx.def)) if (c.persona || typeof c.def === 'function') {
@@ -537,6 +583,18 @@
     panel.addEventListener('click', e => {
       const m = e.target.closest('[data-modo]');
       if (m) { S.modo[clave(def)] = m.dataset.modo; $$('[data-modo]').forEach(b => b.setAttribute('aria-pressed', String(b === m))); pintarPersona(ctx); pintarAcciones(ctx); programar(ctx, 0); return; }
+      const lq = e.target.closest('[data-lf-quitar]');
+      if (lq) {
+        const k = lq.dataset.lfQuitar; const L = estadoLista(def);
+        if (k[0] === 'p') { S.seleccion.delete(+k.slice(1)); const cb = $(`[data-lote="${k.slice(1)}"]`); if (cb) cb.checked = false; const n = $('#lote-n'); if (n) n.textContent = `${S.seleccion.size} seleccionadas`; }
+        else L.man.splice(+k.slice(1), 1);
+        pintarFilasLista(ctx); programar(ctx); return;
+      }
+      if (e.target.closest('[data-lf-anadir]')) {
+        estadoLista(def).man.push({}); pintarFilasLista(ctx);
+        const ins = $$('#lf-tabla tr.a-mano'); const ult = ins[ins.length - 1]; if (ult) { ult.scrollIntoView({ block: 'nearest' }); ult.querySelector('input').focus(); }
+        return;
+      }
       const a2 = e.target.closest('[data-acc2]');
       if (a2) { a2.dataset.acc2 === 'cargar' ? $('#archivo-excel').click() : datosFicticios(); return; }
       const an = e.target.closest('[data-anadir]');
@@ -559,9 +617,15 @@
     const alCambiar = e => {
       const el = e.target;
       if (el.dataset.check) { if (e.type === 'change') contarCheck(el.dataset.check); return; }
+      if (el.dataset.lf) {
+        const k = el.dataset.lf; const L = estadoLista(def);
+        if (k[0] === 'p') { const i = +k.slice(1); (L.ed[i] = L.ed[i] || {})[el.dataset.k] = el.value; }
+        else (L.man[+k.slice(1)] = L.man[+k.slice(1)] || {})[el.dataset.k] = el.value;
+        programar(ctx); return;
+      }
       if (el.dataset.campo) {
         valores[el.dataset.campo] = el.value;
-        if (el.type === 'radio' || el.tagName === 'SELECT') visibilidad(ctx);
+        if (el.type === 'radio' || el.tagName === 'SELECT') { visibilidad(ctx); if (def.lista && e.type === 'change') pintarFilasLista(ctx); }
         el.closest('.campo')?.classList.remove('falta');
         programar(ctx);
       } else if (el.dataset.t) {
@@ -585,10 +649,127 @@
 
   function pintarAcciones(ctx) {
     const modo = S.modo[clave(ctx.def)] || 'una';
-    const n = (S.lote[clave(ctx.def)] || new Set()).size;
+    const n = S.seleccion.size;
+    if (ctx.def.lista) {
+      $('#acciones').innerHTML = (ctx.def.xlsx ? `<button class="btn suave" data-exp="excel">${ico.excel}Excel</button>` : '')
+        + `<button class="btn suave" data-exp="word">${ico.word}Word</button><button class="btn suave" data-exp="imprimir">${ico.imprimir}Imprimir</button><button class="btn principal" data-exp="pdf">${ico.pdf}PDF</button>`;
+      return;
+    }
     $('#acciones').innerHTML = modo === 'varias'
       ? `<button class="btn suave" data-exp="zip" ${n ? '' : 'disabled'}>${ico.zip}Word (${n}) en ZIP</button><button class="btn principal" data-exp="pdf-lote" ${n ? '' : 'disabled'}>${ico.pdf}Un PDF con ${n}</button>`
       : `<button class="btn suave" data-exp="word">${ico.word}Word</button><button class="btn suave" data-exp="imprimir">${ico.imprimir}Imprimir</button><button class="btn principal" data-exp="pdf">${ico.pdf}PDF</button>`;
+  }
+
+  // ------------------------------------------------------------------ documentos de tipo lista
+  /* Una sola hoja (o varias) con muchas personas, una por fila. Las filas salen de la
+   * selección común; se pueden corregir celda a celda (sin tocar el Excel) y añadir a mano. */
+  function estadoLista(def) { return S.listas[clave(def)] || (S.listas[clave(def)] = { ed: {}, man: [] }); }
+  function opcionesLista(def, valores) {
+    const o = {}; for (const c of camposDe(def)) o[c.id] = valores[c.id] !== undefined ? valores[c.id] : defecto(c, null);
+    return o;
+  }
+  function filasLista(def, valores) {
+    const L = estadoLista(def), o = opcionesLista(def, valores), cols = def.lista.columnas;
+    const P = i => S.personas[i];
+    const sel = [...S.seleccion].filter(i => P(i));
+    const ap = i => C.norm([P(i).apellido1 || P(i).apellidos, P(i).apellido2, P(i).nombre].join(' '));
+    const porAp = (a, b) => ap(a).localeCompare(ap(b), 'es');
+    const emp = i => C.ordenEmpleo(P(i).empleo_abrev || P(i).empleo);
+    const orden = {
+      'Apellidos': porAp,
+      'Compañía y apellidos': (a, b) => String(P(a).cia || '~').localeCompare(String(P(b).cia || '~'), 'es', { numeric: true }) || porAp(a, b),
+      'Empleo (de mayor a menor)': (a, b) => emp(b) - emp(a) || porAp(a, b),
+      'Como están en el Excel': (a, b) => a - b,
+    }[o.orden];
+    if (orden) sel.sort(orden);
+    const filas = sel.map(i => {
+      const r = { _k: 'p' + i };
+      for (const c of cols) r[c.id] = String((c.de ? c.de(P(i), o) : P(i)[c.id]) || '');
+      return Object.assign(r, L.ed[i] || {});
+    });
+    L.man.forEach((m, j) => { const r = { _k: 'm' + j }; for (const c of cols) r[c.id] = m[c.id] || ''; filas.push(r); });
+    return filas;
+  }
+  function construirLista(def, valores) {
+    const o = opcionesLista(def, valores);
+    const d = Object.assign({}, S.ajustes, o);
+    const cols = def.lista.columnas;
+    const filas = filasLista(def, valores).map(r => {
+      const x = {};
+      for (const c of cols) { let v = String(r[c.id] ?? '').trim(); if (c.tipo === 'fecha' && v) v = C.corta(C.aFecha(v)) || v; x[c.id] = v; }
+      return x;
+    }).filter(x => Object.values(x).some(Boolean));
+    const av = [];
+    if (!filas.length) av.push({ tipo: 'falta', txt: S.personas.length ? 'La lista está vacía: marca personas arriba o añade filas a mano.' : 'La lista está vacía: carga el Excel y marca personas, o añade filas a mano.' });
+    if (cols.some(c => c.id === 'dni')) {
+      const sin = filas.filter(f => !f.dni).length;
+      if (sin) av.push({ tipo: 'aviso', txt: `${sin} ${sin === 1 ? 'fila' : 'filas'} sin DNI.` });
+      const cuenta = {}; for (const f of filas) if (f.dni) cuenta[f.dni] = (cuenta[f.dni] || 0) + 1;
+      const rep = Object.keys(cuenta).filter(k => cuenta[k] > 1);
+      if (rep.length) av.push({ tipo: 'error', txt: `DNI repetido en la lista: ${rep.join(', ')}.` });
+    }
+    if (def.lista.revisar) def.lista.revisar(filas, av);
+    const vacias = Math.max(0, Math.min(300, parseInt(o.vacias, 10) || 0));
+    d[def.lista.id] = filas.concat(Array.from({ length: vacias }, () => ({})));
+    d.n_filas = filas.length;
+    return { d, av, filas };
+  }
+  function pintarPanelLista(ctx) {
+    const cont = $('#sec-persona');
+    cont.innerHTML = `<h2><span class="n">1</span>Personas de la lista</h2>
+      ${S.personas.length ? '<div id="selector"></div>' : `<div class="vacio" style="padding:18px"><strong style="font-size:19px">Carga el Excel de personal</strong>Marca de golpe a quien quieras (por CÍA, por empleo o pegando una lista de DNI). También puedes escribir filas a mano abajo.<br><br><button class="btn principal peq" type="button" data-acc2="cargar">Cargar Excel</button> <button class="enlace" data-acc2="ficticios">o datos inventados</button></div>`}
+      <div class="lista-filas">
+        <div class="lista-filas-cab"><h3>Filas de la lista <span id="lf-n"></span></h3><button class="btn suave peq" type="button" data-lf-anadir>+ Fila a mano</button></div>
+        <p class="lista-ayuda">Lo que corrijas aquí sale en el documento; el Excel de personal no se toca.</p>
+        <div id="lf-tabla"></div>
+      </div>`;
+    if (S.personas.length) pintarSelector($('#selector', cont), () => { pintarFilasLista(ctx); programar(ctx); });
+    pintarFilasLista(ctx);
+  }
+  function pintarFilasLista(ctx) {
+    const { def } = ctx; const cols = def.lista.columnas;
+    const filas = filasLista(def, ctx.valores);
+    $('#lf-n').textContent = `(${filas.length})`;
+    if (!filas.length) { $('#lf-tabla').innerHTML = '<div class="vacio" style="padding:14px">Todavía no hay filas.</div>'; return; }
+    const anchos = cols.map(c => `<col${c.ancho ? ` style="width:${c.ancho}px"` : ''}>`).join('');
+    $('#lf-tabla').innerHTML = `<div class="tabla-ed tabla-lista"><table><colgroup><col style="width:30px">${anchos}<col style="width:30px"></colgroup>
+      <thead><tr><th></th>${cols.map(c => `<th>${esc(c.et)}</th>`).join('')}<th></th></tr></thead><tbody>${filas.map((r, i) => `<tr${r._k[0] === 'm' ? ' class="a-mano"' : ''}><td class="idx">${i + 1}</td>${cols.map(c =>
+        `<td><input data-lf="${r._k}" data-k="${c.id}" value="${esc(r[c.id])}"${c.tipo === 'fecha' ? ' placeholder="dd/mm/aaaa" inputmode="numeric"' : ''} aria-label="${esc(c.et)} ${i + 1}"></td>`).join('')}
+        <td class="quitar"><button type="button" data-lf-quitar="${r._k}" title="Quitar de la lista" aria-label="Quitar fila ${i + 1}">×</button></td></tr>`).join('')}</tbody></table></div>`;
+  }
+  /* Reparte las filas en hojas A4 midiendo la vista previa: cabecera y título se repiten. */
+  const MARGEN_LISTA = 14; // px de colchón al pie de cada hoja
+  function repartirFilas(cont, n) {
+    const s = cont.querySelector('section.hoja-docx'); const t = s && s.querySelector('table');
+    if (!t || !n) return [[0, n]];
+    const filas = Array.from(t.rows).slice(1);
+    if (filas.length !== n) return [[0, n]];
+    const base = s.getBoundingClientRect().top;
+    const alto = parseFloat((s.style.minHeight || '').replace('pt', '')) * 4 / 3 || s.clientHeight;
+    const limite = alto - parseFloat(getComputedStyle(s).paddingBottom) - MARGEN_LISTA;
+    const cap = limite - (filas[0].getBoundingClientRect().top - base);
+    const trozos = []; let ini = 0, usado = 0;
+    filas.forEach((tr, i) => {
+      const h = tr.getBoundingClientRect().height;
+      if (i > ini && usado + h > cap) { trozos.push([ini, i]); ini = i; usado = 0; }
+      usado += h;
+    });
+    trozos.push([ini, n]);
+    return trozos;
+  }
+  async function documentoLista(def, d) {
+    const id = def.lista.id, todas = d[id];
+    d.paginas = [Object.assign({ salto: '' }, { [id]: todas })];
+    let blob = await M.rellenar(window.PLANTILLAS[def.plantilla], d);
+    const cont = document.createElement('div'); $('#taller').appendChild(cont);
+    await renderizar(blob, cont);
+    const trozos = repartirFilas(cont, todas.length);
+    if (trozos.length > 1) {
+      d.paginas = trozos.map(([a, b], i) => ({ salto: i ? '1' : '', [id]: todas.slice(a, b) }));
+      blob = await M.rellenar(window.PLANTILLAS[def.plantilla], d);
+      await renderizar(blob, cont);
+    }
+    return { blob, cont };
   }
 
   // ------------------------------------------------------------------ previsualización
@@ -599,7 +780,7 @@
   }
   function personaVista(ctx) {
     const modo = S.modo[clave(ctx.def)] || 'una';
-    if (modo === 'varias') { const sel = [...(S.lote[clave(ctx.def)] || [])]; return sel.length ? copiaPersona(S.personas[sel[0]]) : null; }
+    if (modo === 'varias') { const sel = [...S.seleccion]; return sel.length ? copiaPersona(S.personas[sel[0]]) : null; }
     return personaDe(ctx.def);
   }
   let contador = 0;
@@ -643,6 +824,7 @@
   /** Rellena y maqueta. Si el documento admite salto automático y no cabe holgado en una hoja,
    *  vuelve a generarlo con el salto (los bloques que van juntos pasan enteros a la hoja siguiente). */
   async function documentoFinal(def, d) {
+    if (def.lista) return documentoLista(def, d);
     let blob = await M.rellenar(window.PLANTILLAS[def.plantilla], d);
     const cont = document.createElement('div'); $('#taller').appendChild(cont);
     await renderizar(blob, cont);
@@ -657,15 +839,15 @@
   async function actualizar(ctx) {
     if (!$('#avisos') || !$('#hojas')) return; // se ha cambiado de página
     const { def } = ctx; const v = ++S.version;
-    const persona = personaVista(ctx);
-    const { d, av } = construirDatos(def, persona, ctx.valores, ctx.tablas);
+    const persona = def.lista ? null : personaVista(ctx);
+    const { d, av } = def.lista ? construirLista(def, ctx.valores) : construirDatos(def, persona, ctx.valores, ctx.tablas);
     pintarRevision(ctx, d, av);
     try {
       const { blob, cont: tmp } = await documentoFinal(def, d);
       if (v !== S.version) { tmp.remove(); return; }
       const hojas = $('#hojas'); if (!hojas) { tmp.remove(); return; }
       hojas.replaceChildren(...tmp.childNodes); tmp.remove();
-      S.ultimo = { blob, d, av, def, nombre: nombreDoc(def, persona) };
+      S.ultimo = { blob, d, av, def, nombre: def.lista ? C.nombreArchivo(def.archivo || def.id, d.n_filas + '_personas') : nombreDoc(def, persona) };
       aplicarZoom();
       const des = desbordes(hojas);
       $('#desborde').innerHTML = des.length ? `<div class="desborde aviso av-error">El texto no cabe en la hoja ${des.join(', ')}: al imprimir pasaría a otra. Acorta algún campo.</div>` : '';
@@ -674,7 +856,7 @@
       const faltan = av.filter(a => a.tipo === 'falta' || a.tipo === 'error').length;
       const modo = S.modo[clave(def)] || 'una';
       if (!$('#estado-texto')) return;
-      $('#estado-texto').innerHTML = (modo === 'varias' ? `Vista de la 1.ª persona · ` : '') + `<b>${nPag} ${nPag === 1 ? 'hoja' : 'hojas'} A4</b> · ` + (faltan ? `${faltan} ${faltan === 1 ? 'cosa' : 'cosas'} por revisar` : 'listo para exportar');
+      $('#estado-texto').innerHTML = (def.lista ? `${d.n_filas} ${d.n_filas === 1 ? 'persona' : 'personas'} · ` : modo === 'varias' ? `Vista de la 1.ª persona · ` : '') + `<b>${nPag} ${nPag === 1 ? 'hoja' : 'hojas'} A4</b> · ` + (faltan ? `${faltan} ${faltan === 1 ? 'cosa' : 'cosas'} por revisar` : 'listo para exportar');
     } catch (e) {
       console.error(e); $('#estado-texto').textContent = 'Error al generar: ' + e.message; $('#luz').classList.remove('cargando');
     }
@@ -719,6 +901,13 @@
     const { def } = ctx;
     const textoBtn = boton.innerHTML; boton.disabled = true;
     try {
+      if (tipo === 'excel') {
+        if (!S.ultimo || S.ultimo.def !== def) { await actualizar(ctx); }
+        if (!confirmarFaltas()) return;
+        const xl = await Hoja.rellenar(window.PLANTILLAS[def.xlsx], S.ultimo.d);
+        descargar(xl, S.ultimo.nombre + '.xlsx'); toast('Excel descargado. Al imprimir ya sale en A4, ajustado al ancho y con la cabecera en cada hoja.');
+        return;
+      }
       if (tipo === 'word' || tipo === 'pdf' || tipo === 'imprimir') {
         if (!S.ultimo || S.ultimo.def !== def) { await actualizar(ctx); }
         if (!confirmarFaltas()) return;
@@ -730,7 +919,7 @@
         imprimirPdf(pdf);
         return;
       }
-      const sel = [...(S.lote[clave(def)] || [])].map(i => S.personas[i]);
+      const sel = [...S.seleccion].map(i => S.personas[i]).filter(Boolean);
       if (!sel.length) return;
       if (tipo === 'zip') {
         const zip = new JSZip(); const usados = new Set();

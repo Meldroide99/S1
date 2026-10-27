@@ -5,6 +5,10 @@
  *   {CAMPO}          valor en MAYÚSCULAS
  *   {Campo}          si el valor viene en mayúsculas, lo pasa a "Tipo Título" (de, del, la... en minúscula)
  *   {#lista} ... {/lista}   en una fila de tabla: repite la fila por cada elemento de la lista
+ *   párrafo solo con {#bloque} ... párrafo solo con {/bloque}: repite todo lo de en medio
+ *                    (párrafos y tablas) por cada elemento; sirve para listas de varias hojas
+ *   {?campo}         si el campo está vacío, se quita el párrafo
+ *   {^campo}         si el campo tiene valor, el párrafo empieza en hoja nueva
  * Word suele partir las etiquetas en varios trozos al escribirlas; el motor las vuelve a unir.
  */
 (function (global) {
@@ -111,6 +115,7 @@
 
   /* Párrafos condicionales: si un párrafo contiene {?campo} y el campo está vacío,
    * se elimina el párrafo entero; si tiene valor, solo se quita la marca. */
+  const docDe = n => n.ownerDocument || n;
   function condicionales(doc, datos) {
     // {^campo}: si el campo tiene valor, el párrafo empieza en hoja nueva (salto de página antes)
     for (const p of hijos(doc, 'p')) {
@@ -120,8 +125,8 @@
       const v = buscar(m[1], [datos]);
       if (v === '' || v === false || v === '0') continue;
       let pPr = Array.from(p.childNodes).find(n => n.localName === 'pPr');
-      if (!pPr) { pPr = doc.createElementNS(W, 'w:pPr'); p.insertBefore(pPr, p.firstChild); }
-      const salto = doc.createElementNS(W, 'w:pageBreakBefore');
+      if (!pPr) { pPr = docDe(doc).createElementNS(W, 'w:pPr'); p.insertBefore(pPr, p.firstChild); }
+      const salto = docDe(doc).createElementNS(W, 'w:pageBreakBefore');
       // orden del esquema: pStyle, keepNext, keepLines, pageBreakBefore, ...
       const despues = Array.from(pPr.childNodes).filter(n => ['pStyle', 'keepNext', 'keepLines'].includes(n.localName)).pop();
       pPr.insertBefore(salto, despues ? despues.nextSibling : pPr.firstChild);
@@ -143,6 +148,38 @@
     }
   }
 
+  /* Bloques de párrafos y tablas: <p>{#paginas}</p> ... <p>{/paginas}</p> en el cuerpo.
+   * Cada elemento de la lista recibe una copia de lo de en medio, rellenada con sus datos
+   * (y con los generales). Las marcas desaparecen. */
+  function bloques(doc, datos) {
+    let seguridad = 0;
+    while (seguridad++ < 50) {
+      const ini = hijos(doc, 'p').find(p => p.parentNode && p.parentNode.localName === 'body' && /^\s*\{#[^}]+\}\s*$/.test(textoDe(p)));
+      if (!ini) break;
+      const nombre = textoDe(ini).trim().slice(2, -1);
+      const grupo = []; let n = ini.nextSibling; let fin = null;
+      while (n) {
+        if (n.localName === 'p' && textoDe(n).trim() === '{/' + nombre + '}') { fin = n; break; }
+        if (n.nodeType === 1) grupo.push(n);
+        n = n.nextSibling;
+      }
+      const lista = Array.isArray(datos[nombre.toLowerCase()]) ? datos[nombre.toLowerCase()] : [];
+      const padre = ini.parentNode;
+      for (const item of lista) {
+        const ambito = Object.assign({}, datos, item);
+        const caja = docDe(doc).createElementNS(W, 'w:caja');
+        for (const g of grupo) caja.appendChild(g.cloneNode(true));
+        condicionales(caja, ambito);
+        expandirBucles(caja, ambito);
+        rellenarTextos(caja, ambito);
+        while (caja.firstChild) padre.insertBefore(caja.firstChild, ini);
+      }
+      for (const g of grupo) padre.removeChild(g);
+      padre.removeChild(ini);
+      if (fin) padre.removeChild(fin);
+    }
+  }
+
   function sustituir(texto, ambitos) {
     return texto.replace(RE_TAG, (m, signo, nombre) => (signo ? '' : transformar(nombre, buscar(nombre, ambitos))));
   }
@@ -159,8 +196,8 @@
       t.textContent = trozos[0];
       let ref = t;
       for (let i = 1; i < trozos.length; i++) {
-        const br = doc.createElementNS(W, 'w:br');
-        const nt = doc.createElementNS(W, 'w:t');
+        const br = docDe(doc).createElementNS(W, 'w:br');
+        const nt = docDe(doc).createElementNS(W, 'w:t');
         nt.setAttributeNS(XMLNS, 'xml:space', 'preserve');
         nt.textContent = trozos[i];
         ref.parentNode.insertBefore(br, ref.nextSibling);
@@ -191,6 +228,7 @@
       if (xml.indexOf('{') < 0) continue;
       const doc = parser.parseFromString(xml, 'application/xml');
       unirEtiquetas(doc);
+      bloques(doc, datos);
       condicionales(doc, datos);
       expandirBucles(doc, datos);
       rellenarTextos(doc, datos);

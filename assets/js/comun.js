@@ -61,6 +61,11 @@
   ];
   const BONITO = { 'SARGENTO PRIMERO': 'SARGENTO 1º', 'CABO PRIMERO': 'CABO 1º', 'ALFEREZ': 'ALFÉREZ', 'CAPITAN': 'CAPITÁN', 'GENERAL DE DIVISION': 'GENERAL DE DIVISIÓN' };
   function empleoNorm(v) { return norm(v).replace(/\b1O\b|\b1\b/g, 'PRIMERO').replace(/\s+/g, ' ').trim(); }
+  /** Posición del empleo en el escalafón (0 = soldado); -1 si no se reconoce. */
+  function ordenEmpleo(v) {
+    const ab = abreviar(v) || (desabreviar(v) ? abreviar(desabreviar(v)) : '');
+    return EMPLEOS.findIndex(x => x[1] === ab);
+  }
   function abreviar(empleo) { const n = empleoNorm(empleo); const e = EMPLEOS.find(x => x[0] === n); return e ? e[1] : ''; }
   function desabreviar(ab) {
     const n = norm(ab).replace(/\s/g, '');
@@ -91,7 +96,19 @@
     { k: 'fecha_incorporacion', et: 'Fecha de incorporación', alias: ['FECHA INCORPORACION', 'FECHA DE INCORPORACION'] },
     { k: 'fin_compromiso', et: 'Fin de compromiso', alias: ['FIN COMPROMISO', 'FECHA FIN COMPROMISO', 'FIN DE COMPROMISO'] },
     { k: 'escalafon', et: 'Nº escalafón', alias: ['NO ESCALAFON', 'ESCALAFON', 'N ESCALAFON'] },
+    { k: 'hps', et: 'HPS (grado)', alias: ['HPS NACIONAL OTAN', 'HPS NACIONAL', 'HPS', 'GRADO HPS', 'HABILITACION', 'HABILITACION PERSONAL DE SEGURIDAD', 'CLEARANCE'] },
+    { k: 'validez_hps', et: 'Validez HPS', alias: ['VALIDEZ HPS', 'CADUCIDAD HPS', 'FECHA VALIDEZ HPS', 'HPS VALIDEZ', 'FECHA CADUCIDAD HPS', 'CADUCIDAD'] },
   ];
+
+  /* "DE LA FUENTE GARCÍA" -> ["DE LA FUENTE", "GARCÍA"]: las partículas van con el apellido siguiente. */
+  const PARTICULAS_APELLIDO = new Set(['DE', 'DEL', 'LA', 'LAS', 'LOS', 'SAN', 'SANTA', 'Y', 'VAN', 'VON', 'DA', 'DI']);
+  function partirApellidos(ap) {
+    const t = String(ap || '').trim().split(/\s+/).filter(Boolean);
+    const uno = [];
+    while (t.length) { const w = t.shift(); uno.push(w); if (!PARTICULAS_APELLIDO.has(norm(w))) break; }
+    if (t.length && t[0] === '-') { uno.push(t.shift()); if (t.length) uno.push(t.shift()); }
+    return [uno.join(' '), t.join(' ')];
+  }
 
   function detectarMapa(columnas) {
     const mapa = {};
@@ -114,6 +131,7 @@
     if (!p.nombre && p.apellidos_nombre.includes(',')) {
       const [a, n] = p.apellidos_nombre.split(','); p.nombre = n.trim(); if (!p.apellidos) p.apellidos = a.trim();
     }
+    if (!p.apellido1 && p.apellidos) [p.apellido1, p.apellido2] = partirApellidos(p.apellidos);
     if (!p.apellidos_nombre) p.apellidos_nombre = [p.apellidos, p.nombre].filter(Boolean).join(', ');
     p.nombre_completo = [p.nombre, p.apellidos].filter(Boolean).join(' ') || p.apellidos_nombre;
     if (!p.empleo && p.empleo_abrev) p.empleo = desabreviar(p.empleo_abrev) || p.empleo_abrev;
@@ -235,6 +253,6 @@
   global.Comun = {
     sinAcentos, norm, esc, aFecha, iso, corta, larga, militar, hoy, diasEntre, sumarMeses, esLaborable, letras,
     festivos, abreviar, desabreviar, CAMPOS_PERSONA, detectarMapa, persona, buscarPersonas,
-    AJUSTES_DEF, ajustes, guardarAjustes, leerLocal, guardarLocal, nombreArchivo, MESES,
+    AJUSTES_DEF, ajustes, guardarAjustes, leerLocal, guardarLocal, nombreArchivo, MESES, partirApellidos, ordenEmpleo,
   };
 })(window);

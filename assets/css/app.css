@@ -209,6 +209,22 @@ code { font: 12.5px var(--mono); background: var(--hundido); padding: 1px 5px; b
 .lote-lista .emp { font-size: 11px; font-weight: 800; color: var(--oro-tinta); }
 .lote-lista .dni { font: 11.5px var(--mono); color: var(--gris); }
 .lote-pie { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; margin-top: 8px; color: var(--gris); }
+.lote-pegar { margin-top: 10px; font-size: 13px; }
+.lote-pegar summary { cursor: pointer; color: var(--oro-tinta); font-weight: 700; font-size: 12.5px; }
+.lote-pegar textarea { width: 100%; margin-top: 8px; border: 1px solid var(--linea-2); border-radius: var(--radio); padding: 8px 10px; font: 13px var(--mono); resize: vertical; background: #fff; }
+.lote-pegar-pie { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-size: 12.5px; color: var(--gris); flex-wrap: wrap; }
+/* listas (un documento con muchas personas) */
+.lista-nota { font-size: 13px; color: var(--gris); margin-top: 10px; }
+.lista-filas { margin-top: 18px; }
+.lista-filas-cab { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.lista-filas-cab h3 { font-size: 14px; font-weight: 800; margin: 0; }
+.lista-filas-cab h3 span { color: var(--gris); font-weight: 600; }
+.lista-ayuda { font-size: 12.5px; color: var(--gris); margin: 4px 0 8px; }
+.tabla-lista { max-height: 420px; overflow: auto; }
+.tabla-lista table { min-width: 720px; }
+.tabla-lista thead th { position: sticky; top: 0; z-index: 1; }
+.tabla-lista td input { font-size: 12.5px; padding: 5px 4px; }
+.tabla-lista tr.a-mano td.idx { color: var(--oro-tinta); font-weight: 800; }
 
 /* tablas del formulario */
 .tabla-ed { border: 1px solid var(--linea); border-radius: 6px; overflow: hidden; background: #fff; }

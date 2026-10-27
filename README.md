@@ -11,7 +11,9 @@ Página local para rellenar los modelos de la unidad con los datos del Excel de 
 5. Completa lo que falte (la columna «Revisión» te avisa) y mira la hoja a la derecha: es exactamente como saldrá impresa.
 6. Descarga en **Word**, en **PDF** o pulsa **Imprimir**.
 
-**Varias a la vez:** en cualquier modelo, «Varias a la vez» → filtra por compañía → marca a la gente → un ZIP con un Word por persona o un único PDF para imprimir de una vez (ideal para la hoja anual).
+**Varias a la vez (carga masiva):** en **todos** los modelos, «Varias a la vez» → filtra por compañía o empleo, o **pega una lista de DNI o nombres** → un ZIP con un Word por persona o un único PDF para imprimir de una vez. La selección se mantiene al pasar de un modelo a otro. Cualquier modelo nuevo (también las plantillas propias) tiene esta opción sin hacer nada.
+
+**Listas (S2 · Formulario Clearance):** un solo documento con todas las personas marcadas, una fila cada una. Las filas se pueden corregir o añadir a mano sin tocar el Excel de personal. Sale en **Excel** (la plantilla del S2, ya preparada para imprimir: A4, ajustada al ancho, cabecera en cada hoja y número de página), **Word** y **PDF** (repartida en hojas A4 con la cabecera repetida). Avisa de HPS caducadas, que caducan en 6 meses y DNI repetidos.
 
 ## Privacidad
 
@@ -33,13 +35,15 @@ Se reconoce cada columna por su título (sin importar tildes ni mayúsculas): `N
 
 Columnas que conviene **añadir** para que se rellene más solo: `ESCALA` (ej. `MTM CGET ILG`), `SEXO` (para D./Dª), `DOMICILIO`, `FECHA INGRESO`, `FIN COMPROMISO`.
 
+Para el Clearance se usan `HPS NACIONAL / OTAN` (grado) y `VALIDEZ HPS` (caducidad). Si solo hay `APELLIDOS`, se parte en 1.º y 2.º apellido (las partículas «de», «del», «la»… van con el apellido).
+
 ## Estructura
 
 ```
 index.html            la página
 assets/               estilos, código y librerías (incluidas: funciona sin internet)
 s1/ s2/ s3/ s4/       una carpeta por sección
-  plantillas/         modelos Word con huecos {asi}
+  plantillas/         modelos Word (y Excel, en las listas) con huecos {asi}
   documentos.js       campos, cálculos y comprobaciones de cada modelo
   plantillas.js       las plantillas empaquetadas (se genera solo)
 tools/                scripts para regenerar las plantillas
@@ -52,11 +56,13 @@ tools/                scripts para regenerar las plantillas
 
 ```
 python3 tools/generar_plantillas.py   # solo si se cambian los modelos de S1 hechos por código
-python3 tools/empaquetar.py           # siempre que cambie algún .docx
+python3 tools/empaquetar.py           # siempre que cambie algún .docx o .xlsx
 python3 tools/sellar.py               # antes de subir: marca de versión para que nadie vea la versión vieja
 ```
 
-Huecos: `{campo}` tal cual · `{CAMPO}` en mayúsculas · `{Campo}` tipo título · `{#lista}…{/lista}` repite una fila de tabla · `{?campo}` al inicio de un párrafo lo quita si el campo está vacío.
+Huecos: `{campo}` tal cual · `{CAMPO}` en mayúsculas · `{Campo}` tipo título · `{#lista}…{/lista}` repite una fila de tabla · un párrafo solo con `{#bloque}` y otro con `{/bloque}` repiten todo lo de en medio (una hoja por elemento) · `{?campo}` al inicio de un párrafo lo quita si el campo está vacío · `{^campo}` empieza el párrafo en hoja nueva si el campo tiene valor.
+
+En las plantillas **Excel** de las listas: la fila modelo lleva `{#filas}` en su primera celda y `{/filas}` en la última, y se repite por cada persona conservando bordes, letra y formato (las fechas se guardan como fecha; el DNI, como texto). El Excel solo puede llevar plantillas vacías: el `.gitignore` deja subir `sX/plantillas/*.xlsx` y nada más.
 
 ## Librerías incluidas
 

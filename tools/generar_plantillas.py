@@ -322,13 +322,14 @@ def ordenar_xml(raiz):
                 el.append(h)
 
 
-def guardar(d, nombre):
+def guardar(d, nombre, carpeta=None):
     for parte in d.part.package.iter_parts():
         el = getattr(parte, '_element', None)
         if el is not None:
             ordenar_xml(el)
-    os.makedirs(SALIDA, exist_ok=True)
-    ruta = os.path.join(SALIDA, nombre)
+    carpeta = carpeta or SALIDA
+    os.makedirs(carpeta, exist_ok=True)
+    ruta = os.path.join(carpeta, nombre)
     props = d.core_properties
     props.author = 'S1'
     props.title = nombre.replace('.docx', '')
@@ -713,6 +714,109 @@ def papeleta_vacantes():
     guardar(d, 'papeleta_solicitud_vacantes.docx')
 
 
+# ---------------------------------------------------------------- S2: listas (Excel + Word)
+SALIDA_S2 = os.path.join(RAIZ, 's2', 'plantillas')
+CLEARANCE_COLS = [  # (cabecera, etiqueta, ancho Word cm, ancho Excel, alineacion)
+    ('DNI', 'DNI', 2.3, 12.0, C),
+    ('APELLIDO 1', 'APELLIDO1', 3.1, 18.25, L),
+    ('APELLIDO 2', 'APELLIDO2', 3.1, 18.25, L),
+    ('NOMBRE', 'NOMBRE', 2.9, 15.41, L),
+    ('GRADO', 'GRADO', 4.2, 24.0, C),
+    ('CADUCIDAD', 'caducidad', 2.4, 12.0, C),
+]
+
+
+def marca_bloque(d, texto):
+    """Parrafo marcador {#bloque} / {/bloque}: el motor repite lo que hay entre los dos
+    (una hoja por cada elemento) y los borra."""
+    p = parrafo(d, texto, tam=2)
+    interlineado_exacto(p, 2, 1)
+    return p
+
+
+def clearance_docx():
+    d = documento(arriba=1.5, abajo=1.5, izq=1.5, der=1.5, pie=0.8)
+    marca_bloque(d, '{#paginas}')
+    # titulo (vacio = linea minima); {^salto}: hoja nueva desde la 2.a
+    p = parrafo(d, [('{^salto}{TITULO}', 'b')], al=C, tam=11, despues=6)
+    rpr = OxmlElement('w:rPr'); sz = OxmlElement('w:sz'); sz.set(qn('w:val'), '4'); rpr.append(sz)
+    p._p.get_or_add_pPr().append(rpr)
+    t = tabla(d, 2, [c[2] for c in CLEARANCE_COLS], alto=0.6, centrada=True)
+    margen_celdas(t, 0.1, 0.1)
+    cab, fila = t.rows
+    cabecera_tabla(cab)
+    for i, (titulo, etiq, _, _, al) in enumerate(CLEARANCE_COLS):
+        texto_celda(cab.cells[i], [(titulo, 'b')], al=C, tam=9)
+        txt = '{' + etiq + '}'
+        if i == 0:
+            txt = '{#filas}' + txt
+        if i == len(CLEARANCE_COLS) - 1:
+            txt += '{/filas}'
+        texto_celda(fila.cells[i], txt, al=al, tam=9)
+    marca_bloque(d, '{/paginas}')
+    espacio(d, 1)  # Word exige un parrafo al final, despues de la tabla
+    guardar(d, 'formulario_clearance.docx', SALIDA_S2)
+
+
+def clearance_xlsx():
+    """Copia limpia del FORMULARIO_CLEARANCE.xlsx del S2 (sin las 992 formas vacias que
+    pesaban 1 MB), preparada para imprimir: A4 vertical, ajustada al ancho, cabecera
+    repetida en cada hoja y numero de pagina. La fila 3 es el modelo de fila {#filas}."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    wb = Workbook(); ws = wb.active; ws.title = 'Hoja1'
+    fino = Side(style='thin', color='000000')
+    borde = Border(left=fino, right=fino, top=fino, bottom=fino)
+    letras = 'ABCDEF'
+    for i, c in enumerate(CLEARANCE_COLS):
+        ws.column_dimensions[letras[i]].width = c[3]
+    ws.merge_cells('A1:F1')
+    ws['A1'] = '{TITULO}'
+    ws['A1'].font = Font(name='Arial', size=11, bold=True)
+    ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[1].height = 22
+    for i, c in enumerate(CLEARANCE_COLS):
+        h = ws.cell(row=2, column=i + 1, value=c[0])
+        h.font = Font(name='Verdana', size=9, bold=True)
+        h.fill = PatternFill('solid', fgColor='FFFFFF')
+        h.border = borde
+        h.alignment = Alignment(horizontal='center', vertical='center')
+        txt = '{' + c[1] + '}'
+        if i == 0:
+            txt = '{#filas}' + txt
+        if i == len(CLEARANCE_COLS) - 1:
+            txt += '{/filas}'
+        v = ws.cell(row=3, column=i + 1, value=txt)
+        v.font = Font(name='Arial', size=10)
+        v.border = borde
+        v.alignment = Alignment(horizontal='center' if c[4] == C else 'left', vertical='center',
+                                wrap_text=(i == 4), indent=0 if c[4] == C else 1)
+        if c[1] == 'caducidad':
+            v.number_format = 'dd/mm/yyyy'
+    ws.row_dimensions[2].height = 18
+    ws.row_dimensions[3].height = 16
+    ws.freeze_panes = 'A3'
+    ws.auto_filter.ref = 'A2:F3'
+    ws.print_title_rows = '2:2'
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.orientation = 'portrait'
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_options.horizontalCentered = True
+    ws.page_margins.left = ws.page_margins.right = 0.6
+    ws.page_margins.top = ws.page_margins.bottom = 0.75
+    ws.page_margins.header = ws.page_margins.footer = 0.3
+    ws.oddFooter.center.text = 'Página &P de &N'
+    ws.oddFooter.center.size = 8
+    ws.oddFooter.center.font = 'Arial'
+    wb.properties.creator = 'S2'
+    wb.properties.title = 'Formulario Clearance'
+    os.makedirs(SALIDA_S2, exist_ok=True)
+    wb.save(os.path.join(SALIDA_S2, 'formulario_clearance.xlsx'))
+    print('  ok formulario_clearance.xlsx')
+
+
 if __name__ == '__main__':
     print('Generando plantillas en', SALIDA)
     licencia_asuntos_propios()
@@ -726,3 +830,5 @@ if __name__ == '__main__':
     excedencia()
     hoja_anual()
     papeleta_vacantes()
+    clearance_docx()
+    clearance_xlsx()
