@@ -15,6 +15,16 @@ Página local para rellenar los modelos de la unidad con los datos del Excel de 
 
 **Listas (S2 · Formulario Clearance):** un solo documento con todas las personas marcadas, una fila cada una. Las filas se pueden corregir o añadir a mano sin tocar el Excel de personal. Sale en **Excel** (la plantilla del S2, ya preparada para imprimir: A4, ajustada al ancho, cabecera en cada hoja y número de página), **Word** y **PDF** (repartida en hojas A4 con la cabecera repetida). Avisa de HPS caducadas, que caducan en 6 meses y DNI repetidos.
 
+## Moral y Bienestar (pestaña MyB)
+
+Calendario principal (mes y agenda, al estilo de Google Calendar) y un apartado por cada tema del programa, cada uno con su jefe bien visible, su foto, su color, sus fechas, sus ideas «por programar» y sus notas. Lo que se añade dentro de un apartado sale solo en el calendario principal.
+
+- Crear: pulsar un día (o arrastrar sobre varios días) o el botón **Crear**. Mover: arrastrar la actividad a otro día. Lo «por programar» se arrastra al día que toque.
+- Cada actividad: fechas o «por programar» con mes orientativo, uno o varios apartados, estado (idea, encaminado, confirmado, hecho, cancelado), prioridad, color, lugar, responsable, notas y repetición semanal o mensual.
+- Exportar a Outlook/Google (.ics), imprimir el mes e imprimir la lista de jefes.
+
+**Dónde se guarda:** en ningún caso en la página (es pública). Todo va en un archivo `moral-bienestar.json` en la carpeta compartida de la unidad. Con Edge o Chrome, «Abrir archivo» y cada cambio se escribe solo en ese archivo; si otra persona lo cambia a la vez, se juntan los cambios (gana lo último que se tocó de cada actividad) y cada 20 s se recogen los de los demás. En otros navegadores: abrir, trabajar y «Descargar copia» para sustituir el archivo. **Nunca subas ese archivo al repositorio.**
+
 ## Privacidad
 
 - La página pide usuario y contraseña al entrar. Es una **cortina**, no seguridad real: la página es pública y funciona entera en el navegador. Lo que protege los datos es que el Excel nunca sale del equipo.
@@ -43,6 +53,7 @@ Para el Clearance se usan `HPS NACIONAL / OTAN` (grado) y `VALIDEZ HPS` (caducid
 index.html            la página
 assets/               estilos, código y librerías (incluidas: funciona sin internet)
 s1/ s2/ s3/ s4/       una carpeta por sección
+moral/                pestaña Moral y Bienestar (sin datos: se abren desde el archivo .json)
   plantillas/         modelos Word (y Excel, en las listas) con huecos {asi}
   documentos.js       campos, cálculos y comprobaciones de cada modelo
   plantillas.js       las plantillas empaquetadas (se genera solo)

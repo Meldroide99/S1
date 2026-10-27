@@ -13,3 +13,7 @@
 Thumbs.db
 desktop.ini
 __pycache__/
+# Datos de Moral y Bienestar (calendario, jefes): viven en la carpeta compartida, nunca aquí
+*.json
+!package.json
+*.ics

@@ -15,6 +15,6 @@ def sello(m):
     h = hashlib.sha1(open(local, 'rb').read()).hexdigest()[:8]
     return f'{attr}="{archivo}?v={h}"'
 
-nuevo = re.sub(r'(src|href)="((?:assets|s[1-4])/[^"?]+\.(?:js|css|png))(?:\?v=[0-9a-f]+)?"', sello, html)
+nuevo = re.sub(r'(src|href)="((?:assets|moral|s[1-4])/[^"?]+\.(?:js|css|png))(?:\?v=[0-9a-f]+)?"', sello, html)
 open(ruta, 'w', encoding='utf-8').write(nuevo)
 print('sellado', len(re.findall(r'\?v=', nuevo)), 'archivos')

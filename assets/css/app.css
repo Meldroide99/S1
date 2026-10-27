@@ -593,3 +593,13 @@ body.sin-acceso .secciones-nav, body.sin-acceso .barra-der { visibility: hidden;
 .revelar.visible { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) { .revelar { opacity: 1; transform: none; } .cab-desliza i { animation: none; } }
 @media (max-width: 560px) { .cab-titulo { font-size: clamp(54px, 15vw, 90px) !important; } .cab-titulo .punto { display: none; } .cab-titulo i { display: block; } }
+/* tarjeta de Moral y Bienestar en la portada: banda ancha con foto */
+.secciones-grid .sec-card-mb { grid-column: 1 / -1; min-height: 130px; overflow: hidden; isolation: isolate; color: #fff; border: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 22px; align-items: center; padding: 22px 26px; }
+.sec-card-mb::before { content: ''; position: absolute; inset: -6px; z-index: -2; background: url('../img/foto-sierra.jpg') center 42% / cover no-repeat; filter: blur(1px); transition: transform .8s var(--curva); }
+.sec-card-mb::after { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgba(8,33,56,.9), rgba(9,38,64,.55) 55%, rgba(10,44,74,.15)); }
+.sec-card-mb:hover::before { transform: scale(1.05); }
+.sec-card-mb .num { color: #fff; grid-row: 1 / 3; font-size: 58px; }
+.sec-card-mb .num i { color: var(--oro-claro); font-style: italic; }
+.sec-card-mb h3 { margin: 0; align-self: end; color: #fff; }
+.sec-card-mb p { color: #D6E1EC; align-self: start; }
+.sec-card-mb .flecha { border-color: rgba(255,255,255,.5); color: #fff; top: 50%; margin-top: -15px; right: 24px; }

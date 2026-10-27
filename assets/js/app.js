@@ -158,7 +158,9 @@
   window.addEventListener('drop', e => {
     e.preventDefault(); profundidad = 0; $('#soltar').classList.remove('activo');
     const f = e.dataTransfer.files[0]; if (!f) return;
-    if (/\.docx$/i.test(f.name)) cargarPlantillaPropia(f); else cargarExcel(f);
+    if (/\.docx$/i.test(f.name)) cargarPlantillaPropia(f);
+    else if (/\.json$/i.test(f.name)) window.Moral.soltarArchivo(f);
+    else cargarExcel(f);
   });
   $('#archivo-excel').addEventListener('change', e => { const f = e.target.files[0]; if (f) cargarExcel(f); e.target.value = ''; });
   $('#archivo-plantilla').addEventListener('change', e => { const f = e.target.files[0]; if (f) cargarPlantillaPropia(f); e.target.value = ''; });
@@ -215,7 +217,7 @@
       <div class="secciones-grid">${Object.entries(SECCIONES).map(([k, s]) => {
         const n = docs.filter(d => d.seccion === k).length;
         return `<a class="sec-card ${n ? '' : 'vacia'}" href="#/${k}"><span class="flecha">${ico.flecha}</span><div class="num">S<i>${k.slice(1)}</i></div><h3>${s.nombre}</h3><p>${n ? n + ' modelos' : 'Pendiente de modelos'} · ${s.desc}</p></a>`;
-      }).join('')}</div>
+      }).join('')}<a class="sec-card sec-card-mb" href="#/moral"><span class="flecha">${ico.flecha}</span><div class="num">M<i>y</i>B</div><h3>Moral y Bienestar</h3><p>Calendario, actividades y jefe de cada apartado.</p></a></div>
     </div></section>
     <section class="bloque bloque-foto fondo-puerta" style="padding-top:0"><div class="contenedor">
       <div class="bloque-cab"><div><span class="eyebrow">Paso 3 · Modelo</span><h2 class="subtitulo" style="margin-top:8px">Todos los modelos</h2></div>
@@ -1069,7 +1071,7 @@
   let observador = null;
   function animarEntrada(raiz) {
     requestAnimationFrame(moverCabeceras);
-    const els = $$('.grupo-docs > h3, .doc-card, .sec-card, .carga, .datos-texto, .bloque-cab, .vacio', raiz);
+    const els = $$('.grupo-docs > h3, .doc-card, .sec-card, .carga, .datos-texto, .bloque-cab, .vacio, .mb-bloque, .mb-card, .mb-grupo > h3, .mb-bienvenida', raiz);
     if (quieto() || !('IntersectionObserver' in window)) return;
     if (observador) observador.disconnect();
     observador = new IntersectionObserver(ents => {
@@ -1102,6 +1104,7 @@
     else if (a === 'ajustes') vistaAjustes();
     else if (a === 'datos') vistaDatos();
     else if (a === 'propias') vistaPropias();
+    else if (a === 'moral') { $$('.secciones-nav a').forEach(x => x.classList.toggle('activa', x.dataset.sec === 'moral')); window.Moral.vista(b || '', { pintar, toast, animarEntrada, descargar }); window.scrollTo(0, 0); return; }
     else vistaInicio();
     if (!b) window.scrollTo(0, 0);
     document.title = (b && docPorId(b) ? docPorId(b).titulo + ' · ' : '') + 'IIBPAC';
