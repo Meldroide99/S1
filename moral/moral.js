@@ -152,7 +152,19 @@
       } catch (e) { res(null); }
     });
   }
-  const puedeEscribir = () => 'showOpenFilePicker' in window;
+  // En ordenadores corporativos el acceso directo a archivos suele estar bloqueado por directiva:
+  // entonces se usa el «modo clásico» (el mismo explorador que el botón del Excel + descargar copia).
+  const CLASICO = 'iibpac.moral.clasico';
+  let clasico = (() => { try { return sessionStorage.getItem(CLASICO) === '1' || localStorage.getItem(CLASICO) === '1'; } catch (e) { return false; } })();
+  function pasarAClasico() {
+    clasico = true;
+    try { sessionStorage.setItem(CLASICO, '1'); localStorage.setItem(CLASICO, '1'); } catch (e) { /* nada */ }
+    const b = $('[data-mb="guardar-como"]'); if (b) b.remove();
+  }
+  const puedeEscribir = () => !clasico && 'showOpenFilePicker' in window;
+  /** ¿El selector ha fallado por bloqueo (no porque la persona haya cancelado)? */
+  const bloqueado = (e, t0) => e && (e.name !== 'AbortError' || Date.now() - t0 < 400);
+  function explorador() { const i = $('#mb-archivo-input'); if (i) i.click(); }
 
   async function permiso(h, pedir) {
     try {
@@ -174,11 +186,19 @@
     U.toast(`Abierto «${r.nombre}». Los cambios se guardan solos en ese archivo.`);
   }
   async function abrir() {
-    if (!puedeEscribir()) { $('#mb-archivo-input').click(); return; }
+    if (!puedeEscribir()) { explorador(); return; }
+    const t0 = Date.now(); let h;
     try {
-      const [h] = await window.showOpenFilePicker({ id: 'iibpac-moral', types: [{ description: 'Moral y Bienestar (.json)', accept: { 'application/json': ['.json'] } }] });
-      await usarArchivo(h);
-    } catch (e) { if (e.name !== 'AbortError') U.toast(e.message || 'No se pudo abrir el archivo.', 'error'); }
+      [h] = await window.showOpenFilePicker({ id: 'iibpac-moral', types: [{ description: 'Moral y Bienestar (.json)', accept: { 'application/json': ['.json'] } }] });
+    } catch (e) {
+      if (!bloqueado(e, t0)) return; // la persona ha cancelado
+      console.warn('Selector de archivos bloqueado, paso al modo clásico:', e);
+      pasarAClasico();
+      explorador();
+      U.toast('Este ordenador no deja el acceso directo a archivos: uso el explorador normal. Al terminar, pulsa «Descargar copia». Si no se abre, pulsa otra vez «Abrir archivo».');
+      return;
+    }
+    try { await usarArchivo(h); } catch (e) { U.toast(e.message || 'No se pudo abrir el archivo.', 'error'); }
   }
   async function reabrir() {
     const h = await idb('leer'); if (!h) return abrir();
@@ -194,12 +214,20 @@
     } catch (e) { U.toast(e.message || 'No se pudo leer el archivo.', 'error'); }
   }
   async function guardarComo() {
-    if (!('showSaveFilePicker' in window)) return descargar();
+    if (clasico || !('showSaveFilePicker' in window)) return descargar();
+    const t0 = Date.now(); let h;
     try {
-      const h = await window.showSaveFilePicker({ id: 'iibpac-moral', suggestedName: E.nombre || 'moral-bienestar.json', types: [{ description: 'Moral y Bienestar (.json)', accept: { 'application/json': ['.json'] } }] });
+      h = await window.showSaveFilePicker({ id: 'iibpac-moral', suggestedName: E.nombre || 'moral-bienestar.json', types: [{ description: 'Moral y Bienestar (.json)', accept: { 'application/json': ['.json'] } }] });
+    } catch (e) {
+      if (!bloqueado(e, t0)) return;
+      console.warn('Guardar como bloqueado, paso al modo clásico:', e);
+      pasarAClasico();
+      return descargar();
+    }
+    try {
       E.archivo = h; E.ultimaMod = 0; E.nombre = h.name; idb('poner', h);
       await escribir(true);
-    } catch (e) { if (e.name !== 'AbortError') U.toast(e.message, 'error'); }
+    } catch (e) { U.toast(e.message || 'No se pudo guardar.', 'error'); }
   }
   function descargar() {
     E.datos.guardado = ahora();
@@ -339,7 +367,7 @@
       <span class="mb-estado-archivo" id="mb-estado-archivo"></span>
       <span class="mb-barra-acc">
         <button class="btn suave peq" type="button" data-mb="abrir">${SVG.archivo}Abrir archivo</button>
-        ${E.datos && 'showSaveFilePicker' in window ? `<button class="btn suave peq" type="button" data-mb="guardar-como">Guardar como…</button>` : ''}
+        ${E.datos && !clasico && 'showSaveFilePicker' in window ? `<button class="btn suave peq" type="button" data-mb="guardar-como">Guardar como…</button>` : ''}
         ${E.datos ? `<button class="btn suave peq" type="button" data-mb="descargar">${SVG.abajo}Descargar copia</button>` : ''}
       </span></div></div>`;
   }
@@ -915,7 +943,7 @@
     if (!raiz) return;
     raizActual = raiz;
     if (E.datos) { if (rutaActual) pintarCabAp(); pintarCalendario(raiz); enlazarCalendario(raiz); }
-    else idb('leer').then(h => { const b = $('#mb-reabrir', raiz); if (h && b) { b.innerHTML = `Seguir con «${esc(h.name)}»`; b.classList.remove('oculto'); } });
+    else if (puedeEscribir()) idb('leer').then(h => { const b = $('#mb-reabrir', raiz); if (h && b) { b.innerHTML = `Seguir con «${esc(h.name)}»`; b.classList.remove('oculto'); } });
     enlazarAcciones(raiz);
     pintarEstado();
     U.animarEntrada(raiz);
