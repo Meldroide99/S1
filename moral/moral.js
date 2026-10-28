@@ -1,5 +1,11 @@
 /* Moral y Bienestar — calendario y apartados.
  *
+ * Dos modos (se detecta solo):
+ *  - SERVIDOR (la página servida por servidor/servidor.js, p. ej. en la Raspberry): hay usuarios
+ *    con contraseña (lector, editor de clubs, maestro), todo se guarda en el servidor y la gente
+ *    se puede apuntar a las actividades.
+ *  - ARCHIVO (GitHub Pages u otro sitio sin servidor): lo de abajo.
+ *
  * Los datos NO están en la página (que es pública): viven en un archivo .json que se guarda
  * en la carpeta compartida de la unidad. En Edge/Chrome la página escribe directamente en
  * ese archivo cada vez que se cambia algo; si otra persona lo cambia a la vez, se juntan los
@@ -110,10 +116,112 @@
   const nuevoId = p => p + Math.random().toString(36).slice(2, 10);
   const ahora = () => new Date().toISOString();
 
+  // ===================================================================== modo servidor
+  const S = {
+    modo: null, // 'servidor' | 'archivo' (null = aún no se sabe)
+    usuario: null, hayUsuarios: true, rev: 0, base: null, enviando: false, pendiente: false, otraVez: false, error: '', guardadoEn: 0, fallo: '',
+    disp: (() => { // identifica este navegador para poder quitarse uno mismo de una inscripción
+      let d = ''; try { d = localStorage.getItem('iibpac.moral.disp') || ''; if (!d) { d = nuevoId('d') + nuevoId(''); localStorage.setItem('iibpac.moral.disp', d); } } catch (e) { d = d || nuevoId('d') + nuevoId(''); }
+      return d;
+    })(),
+  };
+  E.part = {};
+  async function api(ruta, cuerpo) {
+    const h = { 'X-Dispositivo': S.disp };
+    if (cuerpo) { h['Content-Type'] = 'application/json'; h['X-Iibpac'] = '1'; }
+    const r = await fetch('api/' + ruta, { method: cuerpo ? 'POST' : 'GET', credentials: 'same-origin', headers: h, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: 'no-store' });
+    let j = {}; try { j = await r.json(); } catch (e) { /* sin cuerpo */ }
+    if (r.status === 401 && ruta !== 'login') { S.usuario = null; E.datos = null; E.part = {}; setTimeout(() => repintar(true), 0); }
+    if (!r.ok) throw Object.assign(new Error(j.error || `Error ${r.status} del servidor.`), { status: r.status });
+    return j;
+  }
+  async function detectar() {
+    try {
+      if (location.protocol === 'file:' || /\.github\.io$/.test(location.hostname)) throw new Error('sin servidor');
+      const c = new AbortController(); const t = setTimeout(() => c.abort(), 5000);
+      const r = await fetch('api/yo', { credentials: 'same-origin', signal: c.signal, cache: 'no-store', headers: { 'X-Dispositivo': S.disp } });
+      clearTimeout(t);
+      const j = await r.json();
+      if (j && j.modo === 'servidor') { S.modo = 'servidor'; S.usuario = j.usuario; S.hayUsuarios = j.hayUsuarios; E.datos = null; E.archivo = null; return; }
+    } catch (e) { /* no hay servidor */ }
+    S.modo = 'archivo';
+  }
+  const enServidor = () => S.modo === 'servidor';
+  /** Foto de lo último que se sabe que está en el servidor, para mandar solo lo cambiado. */
+  function foto(d) {
+    return {
+      ev: new Map(d.eventos.map(e => [e.id, JSON.stringify(e)])),
+      ap: new Map(d.apartados.map(a => [a.id, JSON.stringify(a)])),
+      titulo: JSON.stringify([d.titulo, d.subtitulo]),
+    };
+  }
+  function aplicarServidor(d, rev) {
+    E.datos = normalizar(d); E.part = d.participaciones || {};
+    S.rev = rev; S.base = foto(E.datos); S.fallo = '';
+  }
+  async function cargar() { const j = await api('estado'); aplicarServidor(j.datos, j.rev); }
+  async function refrescar(forzar) {
+    if (!S.usuario) return;
+    const j = await api('estado' + (forzar ? '' : '?rev=' + S.rev));
+    if (j.igual) return;
+    aplicarServidor(j.datos, j.rev); repintar();
+  }
+  async function enviarCambios() {
+    if (!E.datos || !S.base) return;
+    if (S.enviando) { S.otraVez = true; return; }
+    const ya = foto(E.datos);
+    const eventos = [], apartados = [], borrar = [];
+    for (const [k, v] of ya.ev) if (S.base.ev.get(k) !== v) eventos.push(JSON.parse(v));
+    for (const [k, v] of ya.ap) if (S.base.ap.get(k) !== v) apartados.push(JSON.parse(v));
+    for (const k of S.base.ev.keys()) if (!ya.ev.has(k)) borrar.push(k);
+    for (const k of S.base.ap.keys()) if (!ya.ap.has(k)) borrar.push(k);
+    const titulo = ya.titulo !== S.base.titulo ? { titulo: E.datos.titulo, subtitulo: E.datos.subtitulo } : null;
+    if (!eventos.length && !apartados.length && !borrar.length && !titulo) { S.pendiente = false; pintarEstado(); return; }
+    S.enviando = true; pintarEstado();
+    try {
+      const r = await api('cambios', { base: S.rev, eventos, apartados, borrar, titulo });
+      S.base = ya; S.rev = r.rev; S.error = ''; S.guardadoEn = Date.now();
+      if (r.otros && !S.otraVez) await refrescar(true);
+    } catch (e) {
+      S.error = e.message; U.toast(e.message, 'error');
+      if (e.status === 403 || e.status === 400) { S.otraVez = false; try { await refrescar(true); S.error = ''; } catch (e2) { /* sin conexión */ } }
+    }
+    S.enviando = false;
+    if (S.otraVez) { S.otraVez = false; enviarCambios(); return; }
+    S.pendiente = false; pintarEstado();
+  }
+  // cada 15 s se mira si otra persona ha cambiado algo
+  setInterval(() => {
+    if (!enServidor() || !S.usuario || !E.datos || S.pendiente || S.enviando || document.hidden) return;
+    if ($('.mb-modal, .mb-pop') || !location.hash.startsWith('#/moral')) return;
+    refrescar(false).catch(() => { /* sin conexión: ya se reintentará */ });
+  }, 15000);
+
+  // ---------------------------------------------------- permisos (en modo archivo se puede todo)
+  const rol = () => (enServidor() ? (S.usuario ? S.usuario.rol : 'nadie') : 'maestro');
+  const esMaestro = () => rol() === 'maestro';
+  const misClubs = () => new Set(enServidor() && S.usuario && S.usuario.rol === 'editor' ? S.usuario.clubs : []);
+  const puedeAp = a => !!a && (esMaestro() || misClubs().has(a.id));
+  const puedeEv = e => esMaestro() || (rol() === 'editor' && e.apartados.some(id => misClubs().has(id)));
+  const puedeBorrarEv = e => esMaestro() || (rol() === 'editor' && e.apartados.length > 0 && e.apartados.every(id => misClubs().has(id)));
+  const puedeCrearEn = apId => esMaestro() || (rol() === 'editor' && (apId ? misClubs().has(apId) : misClubs().size > 0));
+  const apsEditables = () => E.datos.apartados.filter(a => puedeAp(a));
+  const NOMBRE_ROL = { maestro: 'Maestro', editor: 'Editor', lector: 'Lectura' };
+
+  // ---------------------------------------------------- inscripciones
+  const ins = e => e.inscripcion || { abierta: false, plazas: 0, cierre: '' };
+  const parts = id => (E.part && E.part[id]) || [];
+  const insAbierta = e => !!ins(e).abierta && (!ins(e).cierre || ins(e).cierre >= hoyTxt());
+  const conIns = e => enServidor() && (ins(e).abierta || parts(e.id).length > 0);
+  function textoIns(e) {
+    const l = parts(e.id); const n = l.filter(p => !p.reserva).length, r = l.length - n, i = ins(e);
+    return `${n}${i.plazas ? '/' + i.plazas : ''} apuntado${n === 1 ? '' : 's'}${r ? ` · ${r} en reserva` : ''}`;
+  }
+
   function normalizar(d) {
     if (!d || d.formato !== 'iibpac-moral') throw new Error('Este archivo no es de Moral y Bienestar.');
     d.apartados = (d.apartados || []).map(a => Object.assign({ id: nuevoId('a_'), nombre: 'Apartado', grupo: 'Otros', icono: 'circulo', color: 'grafito', foto: 'foto-sierra', resumen: '', notas: '', mod: ahora() }, a, { jefe: Object.assign({ empleo: '', nombre: '', contacto: '' }, a.jefe || {}) }));
-    d.eventos = (d.eventos || []).map(e => Object.assign({ id: nuevoId('e'), titulo: '', apartados: [], inicio: '', fin: '', hora: '', horaFin: '', color: '', estado: 'confirmado', prioridad: '', lugar: '', responsable: '', notas: '', mes: '', mod: ahora() }, e));
+    d.eventos = (d.eventos || []).map(e => Object.assign({ id: nuevoId('e'), titulo: '', apartados: [], inicio: '', fin: '', hora: '', horaFin: '', color: '', estado: 'confirmado', prioridad: '', lugar: '', responsable: '', notas: '', mes: '', mod: ahora() }, e, { inscripcion: Object.assign({ abierta: false, plazas: 0, cierre: '' }, e.inscripcion || {}) }));
     for (const e of d.eventos) { if (e.inicio && (!e.fin || e.fin < e.inicio)) e.fin = e.inicio; if (!e.inicio) e.fin = ''; }
     d.borrados = d.borrados || {};
     d.titulo = d.titulo || 'Programa de Moral y Bienestar'; d.subtitulo = d.subtitulo || '';
@@ -240,6 +348,11 @@
   let tGuardar = null;
   /** Llamar tras cualquier cambio. */
   function cambio(opts) {
+    if (enServidor()) {
+      S.pendiente = true; clearTimeout(tGuardar); tGuardar = setTimeout(enviarCambios, 400);
+      pintarEstado(); if (!opts || opts.repintar !== false) repintar();
+      return;
+    }
     E.sucio = true; copiaSesion();
     clearTimeout(tGuardar); tGuardar = setTimeout(() => escribir(false), 700);
     pintarEstado();
@@ -281,7 +394,7 @@
       }
     } catch (e) { /* red caída: ya se reintentará */ }
   }, 20000);
-  window.addEventListener('beforeunload', e => { if (E.datos && E.sucio && !E.archivo) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', e => { if ((E.datos && E.sucio && !E.archivo) || (enServidor() && (S.pendiente || S.enviando))) { e.preventDefault(); e.returnValue = ''; } });
   // tras recargar la pestaña, se recupera lo que había
   try { const c = JSON.parse(sessionStorage.getItem(COPIA) || 'null'); if (c && c.d) { E.datos = normalizar(c.d); E.nombre = c.nombre || ''; } } catch (e) { /* nada */ }
 
@@ -363,6 +476,15 @@
 
   // ===================================================================== barra del archivo
   function htmlBarraArchivo() {
+    if (enServidor()) {
+      if (!S.usuario) return '';
+      return `<div class="mb-barra" id="mb-barra"><div class="contenedor mb-barra-in">
+      <span class="mb-estado-archivo" id="mb-estado-archivo"></span>
+      <span class="mb-barra-acc">
+        ${esMaestro() ? `<button class="btn suave peq" type="button" data-mb="usuarios">${SVG.persona}Usuarios</button>` : ''}
+        <button class="btn suave peq" type="button" data-mb="salir">Salir</button>
+      </span></div></div>`;
+    }
     return `<div class="mb-barra" id="mb-barra"><div class="contenedor mb-barra-in">
       <span class="mb-estado-archivo" id="mb-estado-archivo"></span>
       <span class="mb-barra-acc">
@@ -374,6 +496,16 @@
   function pintarEstado() {
     const el = $('#mb-estado-archivo'); if (!el) return;
     let cls = 'gris', txt = '';
+    if (enServidor()) {
+      if (!S.usuario) return;
+      const u = S.usuario;
+      const quien = `<b>${esc(u.nombre || u.usuario)}</b> · ${NOMBRE_ROL[u.rol] || u.rol}${u.rol === 'editor' && E.datos ? ' de ' + esc(u.clubs.map(id => (apartado(id) || {}).nombre).filter(Boolean).join(', ') || 'ningún club') : ''}`;
+      if (S.error) { cls = 'error'; txt = `${quien} · no se ha podido guardar (${esc(S.error)}) <button class="enlace" type="button" data-mb="reintentar">Reintentar</button>`; }
+      else if (S.pendiente || S.enviando) { cls = 'aviso'; txt = `${quien} · guardando…`; }
+      else { cls = 'ok'; txt = `${quien}${S.guardadoEn ? ' · guardado ' + haceCuanto(S.guardadoEn) : u.rol === 'lector' ? ' · solo lectura' : ''}`; }
+      el.className = 'mb-estado-archivo ' + cls; el.innerHTML = `<i></i><span>${txt}</span>`;
+      return;
+    }
     if (!E.datos) txt = 'Sin archivo abierto';
     else if (E.error === 'permiso') { cls = 'aviso'; txt = `<b>${esc(E.nombre)}</b> · falta permiso para guardar <button class="enlace" type="button" data-mb="permiso">Permitir</button>`; }
     else if (E.error) { cls = 'error'; txt = `No se pudo guardar en <b>${esc(E.nombre)}</b> (${esc(E.error)}). <button class="enlace" type="button" data-mb="reintentar">Reintentar</button> · <button class="enlace" type="button" data-mb="descargar">Descargar copia</button>`; }
@@ -390,8 +522,9 @@
   function htmlCalendario(filtro) {
     return `<div class="mb-cal ${filtro ? 'mb-cal-ap' : ''}" data-filtro="${filtro || ''}">
       ${filtro ? '' : `<aside class="mb-lateral">
-        <button class="mb-crear" type="button" data-mb="crear">${SVG.mas}<span>Crear</span></button>
+        ${puedeCrearEn(null) ? `<button class="mb-crear" type="button" data-mb="crear">${SVG.mas}<span>Crear</span></button>` : ''}
         <div class="mb-minimes" id="mb-minimes"></div>
+        ${enServidor() ? '<div class="mb-lat-bloque"><h4>Inscripciones abiertas</h4><div id="mb-ins-lat" class="mb-sinfecha"></div></div>' : ''}
         <div class="mb-lat-bloque"><h4>Por programar <small>arrástralas a un día</small></h4><div id="mb-sinfecha" class="mb-sinfecha"></div></div>
         <details class="mb-lat-bloque mb-lat-filtros" open><summary><h4>Apartados</h4></summary><div id="mb-filtros"></div></details>
       </aside>`}
@@ -401,7 +534,7 @@
           <span class="mb-flechas"><button type="button" data-cal="-1" aria-label="Mes anterior">${SVG.izq}</button><button type="button" data-cal="1" aria-label="Mes siguiente">${SVG.der}</button></span>
           <h3 class="mb-cal-titulo" id="mb-cal-titulo"></h3>
           <span class="mb-cal-der">
-            ${filtro ? `<button class="btn oro peq" type="button" data-mb="crear">${SVG.mas}Añadir fecha</button>` : `<label class="mb-buscar">${SVG.buscar}<input type="search" id="mb-buscar" placeholder="Buscar" value="${esc(E.buscar)}" aria-label="Buscar actividad"></label>`}
+            ${filtro ? (puedeCrearEn(filtro) ? `<button class="btn oro peq" type="button" data-mb="crear">${SVG.mas}Añadir fecha</button>` : '') : `<label class="mb-buscar">${SVG.buscar}<input type="search" id="mb-buscar" placeholder="Buscar" value="${esc(E.buscar)}" aria-label="Buscar actividad"></label>`}
             <span class="mb-vistas" role="group" aria-label="Vista"><button type="button" data-vista="mes">Mes</button><button type="button" data-vista="agenda">Agenda</button></span>
             ${filtro ? '' : `<button class="mb-icono" type="button" data-mb="menu" aria-label="Más opciones" title="Más opciones">${SVG.puntos}</button>`}
           </span>
@@ -418,7 +551,7 @@
     const cuerpo = $('#mb-cal-cuerpo', cal);
     cuerpo.innerHTML = E.vista === 'agenda' ? htmlAgenda(filtro) : htmlMes(filtro);
     if (E.vista === 'mes') colocarBarras(cuerpo, filtro);
-    if (!filtro) { pintarMinimes(); pintarFiltros(); pintarSinFecha(); }
+    if (!filtro) { pintarMinimes(); pintarFiltros(); pintarSinFecha(); pintarInsLat(); }
   }
 
   function semanasDelMes(mes) {
@@ -457,8 +590,8 @@
         const col = colorEv(e), varios = f > s || e.fin !== e.inicio, sinHora = !e.hora;
         const corteIzq = e.inicio < w, corteDer = (e.fin || e.inicio) > fin;
         const clases = ['mb-ev', varios || sinHora ? 'lleno' : 'punto', 'est-' + e.estado, corteIzq ? 'corte-izq' : '', corteDer ? 'corte-der' : ''].join(' ');
-        html += `<div role="button" tabindex="0" class="${clases}" draggable="true" data-ev="${e.id}" style="--c:${col};--t:${textoSobre(col)};left:calc(${s} * 100% / 7 + 3px);width:calc(${f - s + 1} * 100% / 7 - 6px);top:${28 + c * 23}px" title="${esc(e.titulo)}">
-          ${!varios && !sinHora ? `<i class="mb-ev-punto"></i><span class="mb-ev-hora">${esc(e.hora)}</span>` : ''}${e.prioridad === 'Máxima' ? '<b class="mb-ev-max">●</b>' : ''}<span class="mb-ev-tit">${esc(e.titulo || '(Sin título)')}</span></div>`;
+        html += `<div role="button" tabindex="0" class="${clases}" draggable="${puedeEv(e)}" data-ev="${e.id}" style="--c:${col};--t:${textoSobre(col)};left:calc(${s} * 100% / 7 + 3px);width:calc(${f - s + 1} * 100% / 7 - 6px);top:${28 + c * 23}px" title="${esc(e.titulo)}">
+          ${!varios && !sinHora ? `<i class="mb-ev-punto"></i><span class="mb-ev-hora">${esc(e.hora)}</span>` : ''}${e.prioridad === 'Máxima' ? '<b class="mb-ev-max">●</b>' : ''}<span class="mb-ev-tit">${esc(e.titulo || '(Sin título)')}</span>${conIns(e) ? `<span class="mb-ev-ins" title="${esc(textoIns(e))}">${SVG.persona}${parts(e.id).length}</span>` : ''}</div>`;
       }
       ocultas.forEach((n, i) => { if (n) html += `<button type="button" class="mb-mas" data-masdia="${sumar(w, i)}" style="left:calc(${i} * 100% / 7 + 3px);width:calc(100% / 7 - 6px);top:${28 + max * 23}px">+${n}<span class="mb-mas-txt"> más</span></button>`; });
       $('.mb-barras', fila).innerHTML = html;
@@ -468,7 +601,7 @@
     const hoy = hoyTxt();
     const desde = E.pasadas ? '0000' : (E.mes + '-01' < hoy ? E.mes + '-01' : hoy);
     const l = ordenar(visibles(filtro).filter(e => e.inicio && (e.fin || e.inicio) >= desde));
-    if (!l.length) return `<div class="mb-vacio">${filtro ? 'Este apartado aún no tiene fechas.' : 'No hay actividades con fecha desde aquí.'}<br><button class="btn oro peq" type="button" data-mb="crear">${SVG.mas}Añadir una</button></div>`;
+    if (!l.length) return `<div class="mb-vacio">${filtro ? 'Este apartado aún no tiene fechas.' : 'No hay actividades con fecha desde aquí.'}${puedeCrearEn(filtro) ? `<br><button class="btn oro peq" type="button" data-mb="crear">${SVG.mas}Añadir una</button>` : ''}</div>`;
     let html = '', mesAnt = '';
     const porDia = {};
     for (const e of l) { const k = e.inicio < desde ? desde : e.inicio; (porDia[k] = porDia[k] || []).push(e); }
@@ -481,7 +614,7 @@
         return `<button type="button" class="mb-ag-ev est-${e.estado}" data-ev="${e.id}" style="--c:${colorEv(e)}"><i></i>
           <span class="mb-ag-hora">${e.fin !== e.inicio ? fechaCorta(e.inicio) + ' – ' + fechaCorta(e.fin) : e.hora ? esc(e.hora + (e.horaFin ? '–' + e.horaFin : '')) : 'Todo el día'}</span>
           <span class="mb-ag-tit">${esc(e.titulo || '(Sin título)')}${e.prioridad === 'Máxima' ? ' <b class="mb-ev-max">●</b>' : ''}</span>
-          <span class="mb-ag-meta">${a && !filtro ? `<span class="mb-ag-ap">${esc(a.nombre)}${jefeTxt(a) ? ' · ' + esc(jefeTxt(a)) : ''}</span>` : ''}${e.estado !== 'confirmado' ? chipEstado(e.estado) : ''}</span></button>`;
+          <span class="mb-ag-meta">${a && !filtro ? `<span class="mb-ag-ap">${esc(a.nombre)}${jefeTxt(a) ? ' · ' + esc(jefeTxt(a)) : ''}</span>` : ''}${e.estado !== 'confirmado' ? chipEstado(e.estado) : ''}${conIns(e) ? chipIns(e) : ''}</span></button>`;
       }).join('')}</div></div>`;
     }
     return `<div class="mb-agenda">${html}<p class="mb-ag-pie"><button class="enlace" type="button" data-mb="pasadas">${E.pasadas ? 'Ocultar las pasadas' : 'Ver también las pasadas'}</button></p></div>`;
@@ -505,8 +638,19 @@
     const porMes = {}; for (const e of lista) (porMes[e.mes || ''] = porMes[e.mes || ''] || []).push(e);
     return Object.keys(porMes).sort((a, b) => (a || '9').localeCompare(b || '9')).map(m => `<div class="mb-sf-grupo"><h5>${m ? may(nombreMes(m)) : 'Sin mes'}</h5>${porMes[m].map(e => {
       const a = apPrincipal(e);
-      return `<div role="button" tabindex="0" class="mb-sf est-${e.estado}" draggable="true" data-ev="${e.id}" style="--c:${colorEv(e)}"><i></i><span><b>${esc(e.titulo || '(Sin título)')}</b>${conAp && a ? `<small>${esc(a.nombre)}</small>` : ''}</span>${e.estado !== 'idea' ? chipEstado(e.estado) : ''}</div>`;
+      return `<div role="button" tabindex="0" class="mb-sf est-${e.estado}" draggable="${puedeEv(e)}" data-ev="${e.id}" style="--c:${colorEv(e)}"><i></i><span><b>${esc(e.titulo || '(Sin título)')}</b>${conAp && a ? `<small>${esc(a.nombre)}</small>` : ''}</span>${e.estado !== 'idea' ? chipEstado(e.estado) : ''}</div>`;
     }).join('')}</div>`).join('');
+  }
+  const chipIns = e => `<span class="mb-ins-chip${insAbierta(e) ? ' abierta' : ''}">${SVG.persona}${esc(textoIns(e))}</span>`;
+  /** Lista de actividades con inscripción (barra lateral del calendario y página del apartado). */
+  function htmlListaIns(lista, conAp) {
+    if (!lista.length) return '<p class="mb-nada">Ninguna ahora mismo.</p>';
+    return ordenar(lista).map(e => { const a = apPrincipal(e);
+      return `<div role="button" tabindex="0" class="mb-sf mb-sf-ins" draggable="false" data-ev="${e.id}" style="--c:${colorEv(e)}"><i></i><span><b>${esc(e.titulo || '(Sin título)')}</b><small>${e.inicio ? esc(fechaCorta(e.inicio)) + ' · ' : ''}${conAp && a ? esc(a.nombre) + ' · ' : ''}${esc(textoIns(e))}</small></span>${insAbierta(e) ? '<em class="mb-ins-punto" title="Abierta"></em>' : ''}</div>`; }).join('');
+  }
+  function pintarInsLat() {
+    const el = $('#mb-ins-lat'); if (!el) return;
+    el.innerHTML = htmlListaIns(visibles(null).filter(e => insAbierta(e) && e.estado !== 'cancelado' && (!e.fin || e.fin >= hoyTxt())), true);
   }
   function pintarSinFecha() {
     const el = $('#mb-sinfecha'); if (!el) return;
@@ -515,28 +659,31 @@
 
   // ------------------------------------------------------------ crear / ver / editar actividades
   function plantillaEvento(campos) {
-    return Object.assign({ id: nuevoId('e'), titulo: '', apartados: [], inicio: '', fin: '', hora: '', horaFin: '', color: '', estado: 'confirmado', prioridad: '', lugar: '', responsable: '', notas: '', mes: '' }, campos);
+    return Object.assign({ id: nuevoId('e'), titulo: '', apartados: [], inicio: '', fin: '', hora: '', horaFin: '', color: '', estado: 'confirmado', prioridad: '', lugar: '', responsable: '', notas: '', mes: '', inscripcion: { abierta: false, plazas: 0, cierre: '' } }, campos);
   }
   function crearRapido(ancla, inicio, fin, apId) {
-    const aps = E.datos.apartados;
+    const aps = apsEditables(); if (!aps.length && !esMaestro()) return;
+    if (!esMaestro() && !aps.some(a => a.id === apId)) apId = aps[0].id;
     const p = popover(ancla, `<form class="mb-rapido">
       <input class="mb-rap-tit" name="titulo" placeholder="Añade un título" autocomplete="off" autofocus>
       <p class="mb-rap-fecha">${SVG.reloj}<span>${esc(textoFechas({ inicio, fin, hora: '' }))}</span></p>
-      <label class="mb-rap-ap">${SVG.bandera}<select name="ap"><option value="">Sin apartado</option>${aps.map(a => `<option value="${a.id}" ${a.id === apId ? 'selected' : ''}>${esc(a.nombre)}</option>`).join('')}</select></label>
+      <label class="mb-rap-ap">${SVG.bandera}<select name="ap">${esMaestro() ? '<option value="">Sin apartado</option>' : ''}${aps.map(a => `<option value="${a.id}" ${a.id === apId ? 'selected' : ''}>${esc(a.nombre)}</option>`).join('')}</select></label>
       <div class="mb-rap-pie"><button class="enlace" type="button" data-mas>Más opciones</button><button class="btn oro peq" type="submit">Guardar</button></div></form>`, 'mb-pop-rapido');
     const f = $('form', p);
     const datos = () => plantillaEvento({ titulo: f.titulo.value.trim(), inicio, fin: fin || inicio, apartados: f.ap.value ? [f.ap.value] : [] });
     f.onsubmit = ev => { ev.preventDefault(); const e = datos(); if (!e.titulo) { f.titulo.focus(); return; } cerrarFlotantes(); guardarEvento(e); U.toast('Actividad guardada.'); };
     $('[data-mas]', p).onclick = () => { const e = datos(); cerrarFlotantes(); editor(e, true); };
   }
-  function verEvento(ancla, id) {
+  function verEvento(ancla, id, abrirForm) {
     const e = E.datos.eventos.find(x => x.id === id); if (!e) return;
     const aps = e.apartados.map(apartado).filter(Boolean);
-    const p = popover(ancla, `<div class="mb-ver">
+    const rect = ancla.getBoundingClientRect ? ancla.getBoundingClientRect() : ancla;
+    const ed = puedeEv(e);
+    const p = popover(rect, `<div class="mb-ver">
       <div class="mb-ver-acc">
-        <button type="button" data-acc="editar" title="Editar" aria-label="Editar">${SVG.lapiz}</button>
-        <button type="button" data-acc="duplicar" title="Duplicar" aria-label="Duplicar">${SVG.copiar}</button>
-        <button type="button" data-acc="borrar" title="Eliminar" aria-label="Eliminar">${SVG.papelera}</button>
+        ${ed ? `<button type="button" data-acc="editar" title="Editar" aria-label="Editar">${SVG.lapiz}</button>
+        <button type="button" data-acc="duplicar" title="Duplicar" aria-label="Duplicar">${SVG.copiar}</button>` : ''}
+        ${puedeBorrarEv(e) ? `<button type="button" data-acc="borrar" title="Eliminar" aria-label="Eliminar">${SVG.papelera}</button>` : ''}
         <button type="button" data-acc="cerrar" title="Cerrar" aria-label="Cerrar">${SVG.cerrar}</button>
       </div>
       <div class="mb-ver-tit"><i style="background:${colorEv(e)}"></i><div><h3>${esc(e.titulo || '(Sin título)')}</h3><p>${esc(textoFechas(e))}</p></div></div>
@@ -546,11 +693,20 @@
         ${e.lugar ? `<div class="mb-ver-fila">${SVG.lugar}<span>${esc(e.lugar)}</span></div>` : ''}
         ${e.responsable ? `<div class="mb-ver-fila">${SVG.persona}<span>${esc(e.responsable)}</span></div>` : ''}
         ${e.notas ? `<div class="mb-ver-fila">${SVG.nota}<span class="mb-ver-notas">${esc(e.notas)}</span></div>` : ''}
-        ${!e.inicio ? `<div class="mb-ver-fila"><button class="btn oro peq" type="button" data-acc="fecha">${SVG.cal}Poner fecha</button></div>` : ''}
-      </div></div>`, 'mb-pop-ver');
+        ${!e.inicio && ed ? `<div class="mb-ver-fila"><button class="btn oro peq" type="button" data-acc="fecha">${SVG.cal}Poner fecha</button></div>` : ''}
+      </div>${conIns(e) ? htmlParticipacion(e) : ''}</div>`, 'mb-pop-ver');
+    const reabrir = () => verEvento(rect, id);
+    if (abrirForm) mostrarFormIns(p);
+    p.addEventListener('submit', ev => { ev.preventDefault(); apuntar(ev.target, e, reabrir); });
     p.addEventListener('click', ev => {
       const b = ev.target.closest('[data-acc]'); if (!b) return;
-      const acc = b.dataset.acc; cerrarFlotantes();
+      const acc = b.dataset.acc;
+      if (acc === 'apuntar') { mostrarFormIns(p); return; }
+      if (acc === 'no-apuntar') { $('.mb-part-form', p).classList.add('oculto'); $('[data-acc="apuntar"]', p)?.classList.remove('oculto'); return; }
+      if (acc === 'desapuntar') { desapuntar(e, b.dataset.pid, reabrir); return; }
+      if (acc === 'csv') { listaCsv(e); return; }
+      if (acc === 'copiar-lista') { copiarLista(e); return; }
+      cerrarFlotantes();
       if (acc === 'editar' || acc === 'fecha') editor(JSON.parse(JSON.stringify(e)), false, acc === 'fecha');
       else if (acc === 'duplicar') { const c = Object.assign(JSON.parse(JSON.stringify(e)), { id: nuevoId('e'), titulo: e.titulo + ' (copia)' }); editor(c, true); }
       else if (acc === 'borrar') borrarEvento(e.id);
@@ -558,7 +714,9 @@
   }
   /** Ventana completa de la actividad, con sus propiedades (estilo Notion). */
   function editor(e, nuevo, enfocarFecha) {
-    const aps = E.datos.apartados;
+    if (!esMaestro() && !e.apartados.some(id => misClubs().has(id))) { const a = apsEditables()[0]; if (!a) return; e.apartados = [a.id, ...e.apartados]; }
+    const aps = E.datos.apartados.filter(a => puedeAp(a) || e.apartados.includes(a.id));
+    const i = ins(e);
     const sinFecha = !e.inicio;
     const m = modal(`<form class="mb-editor" novalidate>
       <div class="mb-ed-cab"><span class="mb-ed-color" style="background:${colorEv(e)}"></span>
@@ -580,11 +738,15 @@
         <div class="mb-prop"><span class="mb-prop-et">${SVG.check}Estado</span><div class="mb-prop-val mb-segmento">${ESTADOS.map(s => `<button type="button" data-estado="${s.k}" aria-pressed="${e.estado === s.k}" class="mb-est-${s.k}">${esc(s.n)}</button>`).join('')}</div></div>
         <div class="mb-prop"><span class="mb-prop-et">${SVG.bandera}Prioridad</span><div class="mb-prop-val mb-segmento">${PRIORIDADES.map(s => `<button type="button" data-prio="${s}" aria-pressed="${e.prioridad === s}">${s || '—'}</button>`).join('')}</div></div>
         <div class="mb-prop"><span class="mb-prop-et">${SVG.foto}Color</span><div class="mb-prop-val mb-paleta"><button type="button" class="mb-color-ap" data-color="" aria-pressed="${!e.color}" title="El del apartado">Del apartado</button>${COLORES.map(c => `<button type="button" class="mb-color" data-color="${c.k}" aria-pressed="${e.color === c.k}" title="${c.n}" aria-label="${c.n}" style="background:${c.v}"></button>`).join('')}</div></div>
+        ${enServidor() ? `<div class="mb-prop"><span class="mb-prop-et">${SVG.persona}Inscripción</span><div class="mb-prop-val">
+          <label class="mb-check"><input type="checkbox" name="insAbierta" ${i.abierta ? 'checked' : ''}> Abrir inscripción (botón «Me apunto»)</label>
+          <div class="mb-ins-op ${i.abierta ? '' : 'oculto'}"><label>Plazas <input type="number" name="insPlazas" min="0" max="9999" value="${i.plazas || ''}" placeholder="Sin límite"></label><label>Cierra el <input type="date" name="insCierre" value="${esc(i.cierre || '')}"></label></div>
+          ${parts(e.id).length ? `<small class="mb-ayuda">${esc(textoIns(e))}. La lista se ve al pinchar la actividad.</small>` : '<small class="mb-ayuda">Si pones plazas, los que lleguen tarde quedan en reserva.</small>'}</div></div>` : ''}
         <div class="mb-prop"><span class="mb-prop-et">${SVG.lugar}Lugar</span><div class="mb-prop-val"><input name="lugar" value="${esc(e.lugar)}" placeholder="Añadir lugar"></div></div>
         <div class="mb-prop"><span class="mb-prop-et">${SVG.persona}Responsable</span><div class="mb-prop-val"><input name="responsable" value="${esc(e.responsable)}" placeholder="Si no es el jefe del apartado"></div></div>
         <div class="mb-prop mb-prop-notas"><span class="mb-prop-et">${SVG.nota}Notas</span><div class="mb-prop-val"><textarea name="notas" rows="4" placeholder="Detalles, material, contactos…">${esc(e.notas)}</textarea></div></div>
       </div>
-      <div class="mb-ed-pie">${nuevo ? '' : `<button class="btn suave peq mb-borrar" type="button" data-borrar>${SVG.papelera}Eliminar</button>`}<span></span>
+      <div class="mb-ed-pie">${nuevo || !puedeBorrarEv(e) ? '' : `<button class="btn suave peq mb-borrar" type="button" data-borrar>${SVG.papelera}Eliminar</button>`}<span></span>
         <button class="btn suave peq" type="button" data-cerrar>Cancelar</button><button class="btn oro" type="submit">Guardar</button></div>
     </form>`, 'mb-modal-editor');
     const f = $('form', m);
@@ -605,6 +767,7 @@
       if (n === 'todo') $('.mb-horas', m).classList.toggle('oculto', ev.target.checked);
       if (n === 'inicio' && (!f.fin.value || f.fin.value < f.inicio.value)) f.fin.value = f.inicio.value;
       if (n === 'repetir') $('.mb-hasta', m).classList.toggle('oculto', !ev.target.value);
+      if (n === 'insAbierta') $('.mb-ins-op', m).classList.toggle('oculto', !ev.target.checked);
     });
     f.addEventListener('keydown', ev => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) f.requestSubmit(); });
     f.onsubmit = ev => {
@@ -616,7 +779,9 @@
         hora: sinF || f.todo.checked ? '' : f.hora.value, horaFin: sinF || f.todo.checked ? '' : f.horaFin.value,
         mes: sinF ? f.mes.value : '', lugar: f.lugar.value.trim(), responsable: f.responsable.value.trim(), notas: f.notas.value.trim(),
       });
+      if (f.insAbierta) r.inscripcion = { abierta: f.insAbierta.checked, plazas: Math.max(0, parseInt(f.insPlazas.value, 10) || 0), cierre: f.insCierre.value || '' };
       if (!r.titulo) { f.titulo.focus(); f.titulo.classList.add('falta'); return; }
+      if (!esMaestro() && !r.apartados.some(id => misClubs().has(id))) { U.toast('Marca al menos uno de tus clubs.', 'error'); return; }
       if (!sinF && !r.inicio) { f.inicio.focus(); return; }
       m.remove();
       const rep = f.repetir && f.repetir.value;
@@ -632,10 +797,80 @@
     };
   }
 
+  // ------------------------------------------------------------ inscripciones («Me apunto»)
+  const EMPLEOS = ['Sdo.', 'Cbo.', 'Cbo. 1º', 'Cbo. My.', 'Sgto.', 'Sgto. 1º', 'Bg.', 'Stte.', 'Sbmy.', 'Alf.', 'Tte.', 'Cap.', 'Cte.', 'Tcol.', 'Col.', 'Civil'];
+  const yo = () => { try { return JSON.parse(localStorage.getItem('iibpac.moral.yo') || '{}'); } catch (e) { return {}; } };
+  function htmlParticipacion(e) {
+    const l = parts(e.id), i = ins(e), abierta = insAbierta(e), gestor = puedeEv(e);
+    const mios = l.filter(p => p.mio); const y = yo();
+    const estado = abierta ? (i.cierre ? `Inscripción abierta hasta el ${fechaLarga(i.cierre)}` : 'Inscripción abierta') : 'Inscripción cerrada';
+    const libres = i.plazas ? Math.max(0, i.plazas - l.filter(p => !p.reserva).length) : null;
+    return `<div class="mb-part">
+      <div class="mb-part-cab">${SVG.persona}<b>Participación</b><span class="mb-part-num">${esc(textoIns(e))}</span></div>
+      <p class="mb-part-estado ${abierta ? 'abierta' : ''}">${esc(estado)}${libres !== null && abierta ? ` · ${libres ? libres + ' plaza' + (libres === 1 ? '' : 's') + ' libre' + (libres === 1 ? '' : 's') : 'completa: se entra en reserva'}` : ''}</p>
+      ${mios.map(p => `<div class="mb-part-yo">${SVG.check}<span>Apuntado: <b>${esc([p.empleo, p.nombre].filter(Boolean).join(' '))}</b>${p.reserva ? ' (reserva)' : ''}</span><button class="enlace" type="button" data-acc="desapuntar" data-pid="${p.id}">Quitar</button></div>`).join('')}
+      ${abierta ? `<button class="btn oro peq mb-part-btn" type="button" data-acc="apuntar">${SVG.mas}${mios.length ? 'Apuntar a otra persona' : 'Me apunto'}</button>
+      <form class="mb-part-form oculto" autocomplete="off">
+        <div class="mb-part-campos"><input name="empleo" placeholder="Empleo" list="mb-empleos-ins" value="${esc(mios.length ? '' : y.empleo || '')}" aria-label="Empleo">
+        <input name="nombre" placeholder="Nombre y apellidos" value="${esc(mios.length ? '' : y.nombre || '')}" required minlength="3" aria-label="Nombre y apellidos"></div>
+        <input name="nota" placeholder="Comentario (opcional)" aria-label="Comentario">
+        <datalist id="mb-empleos-ins">${EMPLEOS.map(x => `<option value="${x}">`).join('')}</datalist>
+        <div class="mb-part-pie"><button class="enlace" type="button" data-acc="no-apuntar">Cancelar</button><button class="btn oro peq" type="submit">Apuntarme</button></div>
+      </form>` : ''}
+      ${l.length ? `<details class="mb-part-lista" ${gestor || l.length <= 12 ? 'open' : ''}><summary>Lista de apuntados (${l.length})</summary><ol>${l.map(p => `<li class="${p.reserva ? 'reserva' : ''}"><span><b>${esc([p.empleo, p.nombre].filter(Boolean).join(' '))}</b>${p.nota ? `<small>${esc(p.nota)}</small>` : ''}</span>${p.reserva ? '<em>reserva</em>' : ''}${gestor || p.mio ? `<button class="mb-icono mb-part-x" type="button" data-acc="desapuntar" data-pid="${p.id}" title="Quitar de la lista" aria-label="Quitar de la lista">${SVG.cerrar}</button>` : ''}</li>`).join('')}</ol>
+        ${gestor ? `<p class="mb-part-exp"><button class="enlace" type="button" data-acc="csv">${SVG.abajo}Descargar lista (Excel)</button><button class="enlace" type="button" data-acc="copiar-lista">${SVG.copiar}Copiar</button></p>` : ''}</details>` : ''}
+    </div>`;
+  }
+  function mostrarFormIns(p) {
+    const f = $('.mb-part-form', p); if (!f) return;
+    f.classList.remove('oculto'); $('[data-acc="apuntar"]', p)?.classList.add('oculto');
+    // la ventanita ha crecido: que no se salga por abajo
+    const r = p.getBoundingClientRect();
+    if (r.bottom > innerHeight - 10) p.style.top = Math.max(10, innerHeight - r.height - 10) + 'px';
+    f.scrollIntoView({ block: 'nearest' });
+    (f.empleo.value ? f.nombre : f.empleo).focus();
+  }
+  async function apuntar(f, e, reabrir) {
+    if (!f.classList.contains('mb-part-form')) return;
+    const datos = { evento: e.id, empleo: f.empleo.value.trim(), nombre: f.nombre.value.trim(), nota: f.nota.value.trim() };
+    if (datos.nombre.length < 3) { f.nombre.focus(); return; }
+    const b = $('button[type=submit]', f); b.disabled = true;
+    try {
+      const j = await api('apuntarse', datos);
+      if (!parts(e.id).some(p => p.mio)) try { localStorage.setItem('iibpac.moral.yo', JSON.stringify({ empleo: datos.empleo, nombre: datos.nombre })); } catch (x) { /* nada */ }
+      tomarParticipaciones(j);
+      const yoP = parts(e.id).find(p => p.mio && p.nombre === datos.nombre);
+      U.toast(yoP && yoP.reserva ? `${datos.nombre}: apuntado en reserva (no quedan plazas).` : `${datos.nombre}: apuntado a «${e.titulo}».`);
+      reabrir();
+    } catch (x) { U.toast(x.message, 'error'); b.disabled = false; }
+  }
+  async function desapuntar(e, pid, reabrir) {
+    const p = parts(e.id).find(x => x.id === pid); if (!p) return;
+    if (!p.mio && !confirm(`¿Quitar a ${[p.empleo, p.nombre].filter(Boolean).join(' ')} de «${e.titulo}»?`)) return;
+    try { tomarParticipaciones(await api('desapuntarse', { evento: e.id, id: pid })); U.toast('Inscripción quitada.'); reabrir(); } catch (x) { U.toast(x.message, 'error'); }
+  }
+  /** Tras apuntarse: si no hay cambios propios a medio guardar, se toma todo lo del servidor. */
+  function tomarParticipaciones(j) {
+    if (!j || !j.datos) return;
+    if (!S.pendiente && !S.enviando) aplicarServidor(j.datos, j.rev); else E.part = j.datos.participaciones || {};
+    repintar();
+  }
+  function filasLista(e) { return parts(e.id).map((p, i) => [i + 1, p.empleo, p.nombre, p.nota, p.reserva ? 'Reserva' : '', new Date(p.fecha).toLocaleString('es-ES')]); }
+  function listaCsv(e) {
+    const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+    const filas = [['Nº', 'Empleo', 'Nombre', 'Comentario', 'Reserva', 'Apuntado el'], ...filasLista(e)];
+    const txt = '﻿' + `${q(e.titulo)}${e.inicio ? ';' + q(textoFechas(e)) : ''}\r\n\r\n` + filas.map(f => f.map(q).join(';')).join('\r\n');
+    U.descargar(new Blob([txt], { type: 'text/csv;charset=utf-8' }), C.nombreArchivo('apuntados_' + (e.titulo || 'actividad')) + '.csv');
+  }
+  async function copiarLista(e) {
+    const txt = `${e.titulo}${e.inicio ? ' · ' + textoFechas(e) : ''}\n` + filasLista(e).map(f => `${f[0]}. ${[f[1], f[2]].filter(Boolean).join(' ')}${f[4] ? ' (reserva)' : ''}${f[3] ? ' — ' + f[3] : ''}`).join('\n');
+    try { await navigator.clipboard.writeText(txt); U.toast('Lista copiada. Pégala donde quieras.'); } catch (x) { U.toast('No se pudo copiar.', 'error'); }
+  }
+
   // ------------------------------------------------------------ arrastrar
   let arrastrado = null;
   function moverA(id, dia) {
-    const e = E.datos.eventos.find(x => x.id === id); if (!e || !dia) return;
+    const e = E.datos.eventos.find(x => x.id === id); if (!e || !dia || !puedeEv(e)) return;
     const dur = e.inicio ? entre(e.inicio, e.fin || e.inicio) : 0;
     if (e.inicio === dia) return;
     e.inicio = dia; e.fin = sumar(dia, dur); e.mes = '';
@@ -676,6 +911,7 @@
     raiz.addEventListener('pointerdown', ev => {
       const d = ev.target.closest('.mb-dia'); if (!d || ev.button !== 0 || ev.target.closest('[data-ev],[data-masdia]')) return;
       if ($('.mb-pop')) return; // el primer clic solo cierra la ventanita abierta
+      if (!puedeCrearEn(($('.mb-cal', raiz) || {}).dataset?.filtro || null)) return;
       SEL = { raiz, ini: d.dataset.dia, fin: d.dataset.dia }; marcarSel(raiz, SEL);
     });
     raiz.addEventListener('pointerover', ev => { if (!SEL || SEL.raiz !== raiz) return; const d = ev.target.closest('.mb-dia'); if (d) { SEL.fin = d.dataset.dia; marcarSel(raiz, SEL); } });
@@ -709,11 +945,14 @@
       <button type="button" data-m="ics">${SVG.cal}Pasar a Outlook / Google (.ics)</button>
       <button type="button" data-m="imprimir">${SVG.imprimir}Imprimir el mes</button>
       <button type="button" data-m="jefes">${SVG.persona}Imprimir la lista de jefes</button>
-      <button type="button" data-m="titulo">${SVG.lapiz}Nombre del programa</button>
-      <hr><button type="button" data-m="descargar">${SVG.abajo}Descargar copia del archivo</button></div>`, 'mb-pop-menu');
+      ${esMaestro() ? `<button type="button" data-m="titulo">${SVG.lapiz}Nombre del programa</button>` : ''}
+      ${!enServidor() ? `<hr><button type="button" data-m="descargar">${SVG.abajo}Descargar copia del archivo</button>` : esMaestro() ? `<hr>
+      <button type="button" data-m="usuarios">${SVG.persona}Usuarios y contraseñas</button>
+      <button type="button" data-m="exportar">${SVG.abajo}Descargar copia de seguridad</button>
+      <button type="button" data-m="importar">${SVG.archivo}Cargar un archivo .json…</button>` : ''}</div>`, 'mb-pop-menu');
     p.addEventListener('click', ev => {
       const b = ev.target.closest('[data-m]'); if (!b) return; cerrarFlotantes();
-      ({ ics: exportarIcs, imprimir: () => imprimir('mes'), jefes: () => imprimir('jefes'), titulo: editarTitulo, descargar }[b.dataset.m])();
+      ({ ics: exportarIcs, imprimir: () => imprimir('mes'), jefes: () => imprimir('jefes'), titulo: editarTitulo, descargar, usuarios: panelUsuarios, exportar: exportarSrv, importar: () => elegirImportar() }[b.dataset.m])();
     });
   }
   function exportarIcs() {
@@ -774,7 +1013,7 @@
   function htmlApartados() {
     const g = grupos();
     return `<div class="mb-aps">${g.map(n => `<div class="mb-grupo"><h3>${esc(n)}</h3><div class="mb-aps-grid">${E.datos.apartados.filter(a => (a.grupo || 'Otros') === n).map(tarjetaAp).join('')}</div></div>`).join('')}
-      <button class="mb-card mb-card-nuevo" type="button" data-mb="nuevo-ap">${SVG.mas}<span>Nuevo apartado</span></button></div>`;
+      ${esMaestro() ? `<button class="mb-card mb-card-nuevo" type="button" data-mb="nuevo-ap">${SVG.mas}<span>Nuevo apartado</span></button>` : ''}</div>`;
   }
   function editarJefe(ancla, a) {
     const p = popover(ancla, `<form class="mb-form-simple mb-jefe-form"><h3>Jefe de «${esc(a.nombre)}»</h3>
@@ -799,8 +1038,8 @@
       <div class="mb-campo"><span>Foto de fondo</span><div class="mb-fotos">${FOTOS.map(f => `<button type="button" data-foto="${f.k}" aria-pressed="${a.foto === f.k}" style="background-image:url('${urlFoto(f.k)}')" title="${f.n}" aria-label="${f.n}"></button>`).join('')}
         ${/^data:/.test(a.foto) ? `<button type="button" data-foto="${esc(a.foto)}" aria-pressed="true" style="background-image:url('${a.foto}')" title="Foto propia"></button>` : ''}
         <label class="mb-subir">${SVG.foto}<span>Subir foto</span><input type="file" accept="image/*" hidden></label></div>
-        <small class="mb-ayuda">La foto subida se guarda dentro del archivo (reducida), así la ve todo el mundo.</small></div>
-      <div class="mb-ed-pie">${nuevo ? '' : `<button class="btn suave peq mb-borrar" type="button" data-borrar>${SVG.papelera}Eliminar apartado</button>`}<span></span>
+        <small class="mb-ayuda">La foto subida se guarda ${enServidor() ? 'en el servidor' : 'dentro del archivo'} (reducida), así la ve todo el mundo.</small></div>
+      <div class="mb-ed-pie">${nuevo || !esMaestro() ? '' : `<button class="btn suave peq mb-borrar" type="button" data-borrar>${SVG.papelera}Eliminar apartado</button>`}<span></span>
         <button class="btn suave peq" type="button" data-cerrar>Cancelar</button><button class="btn oro" type="submit">Guardar</button></div></form>`);
     const f = $('form', m); const sel = { color: a.color, icono: a.icono, foto: a.foto };
     f.addEventListener('click', ev => {
@@ -858,6 +1097,19 @@
     else pintarCabAp();
   }
   function htmlBienvenida() {
+    if (enServidor()) {
+      if (S.usuario && S.fallo) return `<div class="mb-bienvenida"><span class="eyebrow">Sin conexión</span><h2>No se ha podido cargar el programa</h2><p>${esc(S.fallo)}</p><div class="mb-bien-acc"><button class="btn oro" type="button" data-mb="recargar">Volver a intentarlo</button></div></div>`;
+      return `<div class="mb-bienvenida mb-login">
+      <span class="eyebrow">Acceso</span>
+      <h2>Entra para ver el programa</h2>
+      ${S.hayUsuarios ? '<p>Con tu usuario y contraseña. Si no los tienes, pídeselos al responsable de Moral y Bienestar.</p>' : '<p>Aún no hay ningún usuario. Créalo en el servidor con <code>node servidor/admin.js maestro &lt;usuario&gt;</code> y vuelve aquí.</p>'}
+      <form class="mb-login-form" id="mb-login" autocomplete="on">
+        <label>Usuario<input name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus></label>
+        <label>Contraseña<input name="clave" type="password" autocomplete="current-password" required></label>
+        <p class="mb-login-error" hidden></p>
+        <button class="btn oro" type="submit">Entrar</button>
+      </form></div>`;
+    }
     return `<div class="mb-bienvenida">
       <span class="eyebrow">Para empezar</span>
       <h2>Abre el archivo de Moral y Bienestar</h2>
@@ -900,12 +1152,15 @@
     $('#mb-ap-nombre').textContent = a.nombre;
     $('#mb-ap-grupo').textContent = a.grupo;
     $('#mb-ap-resumen').textContent = a.resumen || '';
-    const j = $('#mb-ap-jefe');
-    j.className = 'mb-jefe' + (jefeTxt(a) ? '' : ' sin');
-    j.innerHTML = `<span class="mb-jefe-et">Jefe del apartado</span><b>${jefeTxt(a) ? esc(jefeTxt(a)) : 'Sin asignar'}</b>${a.jefe.contacto ? `<small>${esc(a.jefe.contacto)}</small>` : ''}<span class="mb-jefe-editar">${SVG.lapiz}${jefeTxt(a) ? 'Cambiar' : 'Asignar jefe'}</span>`;
+    const j = $('#mb-ap-jefe'); const ed = puedeAp(a);
+    j.className = 'mb-jefe' + (jefeTxt(a) ? '' : ' sin') + (ed ? '' : ' fijo'); j.disabled = !ed;
+    j.innerHTML = `<span class="mb-jefe-et">Jefe del apartado</span><b>${jefeTxt(a) ? esc(jefeTxt(a)) : 'Sin asignar'}</b>${a.jefe.contacto ? `<small>${esc(a.jefe.contacto)}</small>` : ''}${ed ? `<span class="mb-jefe-editar">${SVG.lapiz}${jefeTxt(a) ? 'Cambiar' : 'Asignar jefe'}</span>` : ''}`;
+    const aj = $('[data-mb="ajustes-ap"]'); if (aj) aj.classList.toggle('oculto', !ed);
+    const idea = $('[data-mb="idea"]'); if (idea) idea.classList.toggle('oculto', !puedeCrearEn(a.id));
+    const insAp = $('#mb-ap-ins'); if (insAp) { const l = E.datos.eventos.filter(e => e.apartados.includes(a.id) && conIns(e) && e.estado !== 'cancelado'); insAp.innerHTML = htmlListaIns(l, false); $('#mb-ap-ins-bloque').classList.toggle('oculto', !l.length); }
     const pend = $('#mb-ap-pend');
     if (pend) pend.innerHTML = htmlSinFecha(E.datos.eventos.filter(e => e.apartados.includes(a.id) && !e.inicio && e.estado !== 'cancelado'), false);
-    const notas = $('#mb-ap-notas'); if (notas && document.activeElement !== notas) notas.value = a.notas || '';
+    const notas = $('#mb-ap-notas'); if (notas && document.activeElement !== notas) { notas.value = a.notas || ''; notas.readOnly = !ed; notas.placeholder = ed ? 'Material, contactos, horarios, ideas…' : 'Sin notas.'; }
   }
   function vistaApartado(id) {
     const a = apartado(id);
@@ -925,6 +1180,7 @@
       <section class="pagina bloque-foto mb-fondo-ap" id="mb-fondo-ap" style="--foto:url('${new URL(urlFoto(a.foto), location.href).href}')"><div class="contenedor mb-ap-cuerpo">
         <div class="mb-bloque mb-ap-cal">${htmlCalendario(a.id)}</div>
         <aside class="mb-ap-lado">
+          ${enServidor() ? `<div class="mb-bloque oculto" id="mb-ap-ins-bloque"><div class="mb-bloque-cab"><h3>Inscripciones</h3></div><p class="mb-ayuda">Pincha una para ver quién va o apuntarte.</p><div id="mb-ap-ins" class="mb-sinfecha"></div></div>` : ''}
           <div class="mb-bloque"><div class="mb-bloque-cab"><h3>Por programar e ideas</h3><button class="btn suave peq" type="button" data-mb="idea">${SVG.mas}Añadir</button></div>
             <p class="mb-ayuda">Sin fecha todavía. Ábrela y ponle día, o cámbiale el estado.</p><div id="mb-ap-pend"></div></div>
           <div class="mb-bloque"><div class="mb-bloque-cab"><h3>Notas del apartado</h3></div>
@@ -934,16 +1190,114 @@
     return raiz;
   }
 
+  // ===================================================================== sesión y administración (modo servidor)
+  async function entrar(ev) {
+    ev.preventDefault();
+    const f = ev.target, err = $('.mb-login-error', f), b = $('button[type=submit]', f);
+    b.disabled = true; err.hidden = true;
+    try {
+      const j = await api('login', { usuario: f.usuario.value.trim(), clave: f.clave.value });
+      S.usuario = j.usuario; S.fallo = ''; E.datos = null;
+      vista(rutaActual);
+      U.toast(`Hola, ${j.usuario.nombre || j.usuario.usuario}.`);
+    } catch (e) { err.textContent = e.message; err.hidden = false; b.disabled = false; f.clave.select(); }
+  }
+  async function salir() {
+    if (S.pendiente || S.enviando) await enviarCambios();
+    try { await api('logout', {}); } catch (e) { /* da igual */ }
+    S.usuario = null; E.datos = null; E.part = {}; S.base = null; S.guardadoEn = 0;
+    vista(rutaActual);
+  }
+  async function exportarSrv() {
+    try {
+      const j = await api('exportar');
+      U.descargar(new Blob([JSON.stringify(j, null, 1)], { type: 'application/json' }), `moral-bienestar-${hoyTxt()}.json`);
+      U.toast('Copia descargada. Guárdala en un sitio seguro (lleva los nombres de los apuntados).');
+    } catch (e) { U.toast(e.message, 'error'); }
+  }
+  function elegirImportar() {
+    const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json';
+    i.onchange = () => { if (i.files[0]) importarSrv(i.files[0]); };
+    i.click();
+  }
+  async function importarSrv(file) {
+    let d; try { d = JSON.parse(await file.text()); } catch (e) { U.toast('Ese archivo no se puede leer.', 'error'); return; }
+    if (!d || d.formato !== 'iibpac-moral') { U.toast('Ese archivo no es de Moral y Bienestar.', 'error'); return; }
+    if (!confirm(`¿Sustituir TODO el programa del servidor por «${file.name}» (${(d.apartados || []).length} apartados, ${(d.eventos || []).length} actividades)?\n\nLas inscripciones de las actividades que sigan existiendo se conservan.`)) return;
+    try { const j = await api('importar', d); aplicarServidor(j.datos, j.rev); repintar(true); U.toast('Programa cargado.'); } catch (e) { U.toast(e.message, 'error'); }
+  }
+  async function panelUsuarios() {
+    let lista;
+    try { lista = (await api('usuarios')).usuarios; } catch (e) { U.toast(e.message, 'error'); return; }
+    const aps = E.datos ? E.datos.apartados : [];
+    const m = modal(`<div class="mb-form-simple mb-usuarios"><h3>Usuarios</h3>
+      <p class="mb-ayuda"><b>Lectura</b>: ve todo y se apunta a actividades. <b>Editor</b>: además edita los clubs que le marques. <b>Maestro</b>: todo, incluidos los usuarios.</p>
+      <div class="mb-usu-lista"></div>
+      <form class="mb-usu-form" autocomplete="off"><h4>Nuevo usuario <small>o pulsa «Cambiar» en uno de la lista</small></h4>
+        <div class="mb-dos"><label>Usuario<input name="usuario" autocapitalize="none" spellcheck="false" placeholder="futbol" required maxlength="32"></label>
+        <label>Descripción (opcional)<input name="nombre" placeholder="Jefe de fútbol"></label></div>
+        <div class="mb-dos"><label>Tipo<select name="rol"><option value="lector">Lectura (la mayoría)</option><option value="editor">Editor de clubs</option><option value="maestro">Maestro</option></select></label>
+        <label>Contraseña<input name="clave" type="text" minlength="8" placeholder="Mínimo 8 caracteres" autocomplete="new-password"></label></div>
+        <div class="mb-campo mb-usu-clubs oculto"><span>Clubs que puede editar</span><div class="mb-usu-checks">${aps.map(a => `<label class="mb-check"><input type="checkbox" name="club" value="${a.id}"> ${esc(a.nombre)}</label>`).join('')}</div></div>
+        <p class="mb-ayuda mb-usu-nota">Al cambiar la contraseña de alguien, se le cierra la sesión en todos sus aparatos.</p>
+        <div class="mb-ed-pie"><button class="enlace" type="button" data-limpiar>Vaciar</button><span></span><button class="btn suave peq" type="button" data-cerrar>Cerrar</button><button class="btn oro" type="submit">Guardar usuario</button></div>
+      </form></div>`, 'mb-modal-usuarios');
+    const f = $('form', m);
+    const nombreClub = id => (apartado(id) || {}).nombre || id;
+    const pintarLista = () => {
+      $('.mb-usu-lista', m).innerHTML = `<table class="mb-usu-tabla"><thead><tr><th>Usuario</th><th>Tipo</th><th>Clubs</th><th></th></tr></thead><tbody>${lista.map(u => `<tr>
+        <td><b>${esc(u.usuario)}</b>${u.nombre ? `<small>${esc(u.nombre)}</small>` : ''}</td><td>${NOMBRE_ROL[u.rol] || u.rol}</td>
+        <td>${u.rol === 'editor' ? esc(u.clubs.map(nombreClub).join(', ') || '—') : u.rol === 'maestro' ? 'Todos' : '—'}</td>
+        <td class="mb-usu-acc"><button class="enlace" type="button" data-cambiar="${esc(u.usuario)}">Cambiar</button>${u.usuario !== S.usuario.usuario ? `<button class="enlace mb-rojo" type="button" data-quitar="${esc(u.usuario)}">Borrar</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
+    };
+    const verClubs = () => $('.mb-usu-clubs', m).classList.toggle('oculto', f.rol.value !== 'editor');
+    pintarLista();
+    f.rol.addEventListener('change', verClubs);
+    m.addEventListener('click', async ev => {
+      const b = ev.target.closest('button'); if (!b) return;
+      if (b.dataset.cerrar !== undefined) m.remove();
+      if (b.dataset.limpiar !== undefined) { f.reset(); f.usuario.readOnly = false; $('h4', f).firstChild.textContent = 'Nuevo usuario '; verClubs(); }
+      if (b.dataset.cambiar) {
+        const u = lista.find(x => x.usuario === b.dataset.cambiar); if (!u) return;
+        f.usuario.value = u.usuario; f.usuario.readOnly = true; f.nombre.value = u.nombre || ''; f.rol.value = u.rol; f.clave.value = '';
+        f.clave.placeholder = 'Déjala vacía para no cambiarla';
+        $$('[name=club]', f).forEach(c => { c.checked = u.clubs.includes(c.value); });
+        $('h4', f).firstChild.textContent = `Cambiar «${u.usuario}» `; verClubs(); f.nombre.focus();
+      }
+      if (b.dataset.quitar) {
+        if (!confirm(`¿Borrar el usuario «${b.dataset.quitar}»? Quien lo use dejará de poder entrar.`)) return;
+        try { lista = (await api('usuarios/borrar', { usuario: b.dataset.quitar })).usuarios; pintarLista(); U.toast('Usuario borrado.'); } catch (e) { U.toast(e.message, 'error'); }
+      }
+    });
+    f.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const cuerpo = { usuario: f.usuario.value.trim().toLowerCase(), nombre: f.nombre.value.trim(), rol: f.rol.value, clave: f.clave.value, clubs: $$('[name=club]:checked', f).map(c => c.value) };
+      if (cuerpo.rol === 'editor' && !cuerpo.clubs.length) { U.toast('Marca al menos un club para el editor.', 'error'); return; }
+      try {
+        lista = (await api('usuarios', cuerpo)).usuarios; pintarLista();
+        U.toast(`Usuario «${cuerpo.usuario}» guardado.${cuerpo.clave ? ' Pásale la contraseña en persona.' : ''}`);
+        if (cuerpo.usuario === S.usuario.usuario) { S.usuario = Object.assign(S.usuario, { rol: cuerpo.rol, clubs: cuerpo.clubs, nombre: cuerpo.nombre }); repintar(true); }
+        f.reset(); f.usuario.readOnly = false; f.clave.placeholder = 'Mínimo 8 caracteres'; $('h4', f).firstChild.textContent = 'Nuevo usuario '; verClubs();
+      } catch (e) { U.toast(e.message, 'error'); }
+    });
+  }
+
   /** Entrada desde el enrutador: ruta = '' (portada) o id de apartado. */
   function vista(ruta, utilidades) {
     if (utilidades) U = utilidades;
     rutaActual = ruta || '';
     cerrarFlotantes();
+    const esperar = (txt, p) => {
+      U.pintar(`<section class="pagina bloque-foto fondo-sec-mb"><div class="contenedor"><p class="mb-cargando">${txt}</p></div></section>`);
+      p.then(() => { if (location.hash.startsWith('#/moral') && rutaActual === (ruta || '')) vista(ruta); });
+    };
+    if (S.modo === null) return esperar('Cargando…', detectar());
+    if (enServidor() && S.usuario && !E.datos && !S.fallo) return esperar('Cargando el programa…', cargar().catch(e => { S.fallo = e.message; }));
     const raiz = rutaActual && E.datos ? vistaApartado(rutaActual) : vistaPortada();
     if (!raiz) return;
     raizActual = raiz;
     if (E.datos) { if (rutaActual) pintarCabAp(); pintarCalendario(raiz); enlazarCalendario(raiz); }
-    else if (puedeEscribir()) idb('leer').then(h => { const b = $('#mb-reabrir', raiz); if (h && b) { b.innerHTML = `Seguir con «${esc(h.name)}»`; b.classList.remove('oculto'); } });
+    else if (!enServidor() && puedeEscribir()) idb('leer').then(h => { const b = $('#mb-reabrir', raiz); if (h && b) { b.innerHTML = `Seguir con «${esc(h.name)}»`; b.classList.remove('oculto'); } });
     enlazarAcciones(raiz);
     pintarEstado();
     U.animarEntrada(raiz);
@@ -960,20 +1314,24 @@
         case 'guardar-como': guardarComo(); break;
         case 'descargar': if (E.datos) descargar(); break;
         case 'permiso': escribir(true); break;
-        case 'reintentar': escribir(true); break;
-        case 'crear': editor(plantillaEvento({ inicio: E.mes === mesTxt(hoyTxt()) ? hoyTxt() : E.mes + '-01', fin: '', apartados: a ? [a.id] : [] }), true); break;
-        case 'idea': editor(plantillaEvento({ estado: 'idea', apartados: a ? [a.id] : [] }), true); break;
+        case 'reintentar': if (enServidor()) { S.error = ''; enviarCambios(); } else escribir(true); break;
+        case 'salir': salir(); break;
+        case 'usuarios': panelUsuarios(); break;
+        case 'recargar': S.fallo = ''; vista(rutaActual); break;
+        case 'crear': editor(plantillaEvento({ inicio: E.mes === mesTxt(hoyTxt()) ? hoyTxt() : E.mes + '-01', fin: '', apartados: a && puedeAp(a) ? [a.id] : [] }), true); break;
+        case 'idea': if (a && !puedeCrearEn(a.id)) break; editor(plantillaEvento({ estado: 'idea', apartados: a ? [a.id] : [] }), true); break;
         case 'menu': menuMas(b); break;
         case 'pasadas': E.pasadas = !E.pasadas; pintarCalendario(raiz); break;
         case 'todos': E.ocultos.clear(); pintarCalendario(raiz); break;
         case 'ninguno': E.datos.apartados.forEach(x => E.ocultos.add(x.id)); E.ocultos.add('_sin'); pintarCalendario(raiz); break;
-        case 'nuevo-ap': ajustesAp({ id: nuevoId('a_'), nombre: '', grupo: 'Otros', icono: 'circulo', color: COLORES[E.datos.apartados.length % COLORES.length].k, foto: FOTOS[E.datos.apartados.length % FOTOS.length].k, resumen: '', notas: '', jefe: { empleo: '', nombre: '', contacto: '' } }, true); break;
-        case 'jefe': if (a) editarJefe(b, a); break;
-        case 'ajustes-ap': if (a) ajustesAp(a, false); break;
+        case 'nuevo-ap': if (!esMaestro()) break; ajustesAp({ id: nuevoId('a_'), nombre: '', grupo: 'Otros', icono: 'circulo', color: COLORES[E.datos.apartados.length % COLORES.length].k, foto: FOTOS[E.datos.apartados.length % FOTOS.length].k, resumen: '', notas: '', jefe: { empleo: '', nombre: '', contacto: '' } }, true); break;
+        case 'jefe': if (a && puedeAp(a)) editarJefe(b, a); break;
+        case 'ajustes-ap': if (a && puedeAp(a)) ajustesAp(a, false); break;
       }
     });
+    const login = $('#mb-login', raiz); if (login) login.addEventListener('submit', entrar);
     const notas = $('#mb-ap-notas', raiz);
-    if (notas) { let t; notas.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { const a = apartado(rutaActual); if (!a) return; a.notas = notas.value; a.mod = ahora(); cambio({ repintar: false }); }, 500); }); }
+    if (notas) { let t; notas.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { const a = apartado(rutaActual); if (!a || !puedeAp(a)) return; a.notas = notas.value; a.mod = ahora(); cambio({ repintar: false }); }, 500); }); }
     // abrir sin escribir (navegadores sin acceso a archivos)
     let inp = $('#mb-archivo-input');
     if (!inp) { inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json'; inp.id = 'mb-archivo-input'; inp.hidden = true; document.body.appendChild(inp); inp.addEventListener('change', () => { if (inp.files[0]) abrirLectura(inp.files[0]); inp.value = ''; }); }
@@ -982,6 +1340,7 @@
   /** Un .json soltado en la ventana. */
   async function soltarArchivo(file) {
     if (!U) return;
+    if (enServidor()) { if (esMaestro()) importarSrv(file); else U.toast('Aquí no hace falta abrir archivos: todo está en el servidor.'); return; }
     if (location.hash.indexOf('#/moral') !== 0) location.hash = '#/moral';
     // con Edge/Chrome, si el archivo soltado trae «manija», se puede escribir en él
     await abrirLectura(file);

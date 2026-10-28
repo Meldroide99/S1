@@ -1,0 +1,29 @@
+# Servicio para que la página arranque sola con la Raspberry y se reinicie si falla.
+# Instalación (cambia «balu» por tu usuario de la Raspberry si es otro):
+#   sudo cp ~/S1/servidor/iibpac.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now iibpac
+# Ver si va:      systemctl status iibpac
+# Ver lo que pasa: journalctl -u iibpac -f
+[Unit]
+Description=Pagina IIBPAC (Moral y Bienestar)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=balu
+WorkingDirectory=/home/balu/S1
+ExecStart=/usr/bin/node /home/balu/S1/servidor/servidor.js
+Environment=PUERTO=8080
+Environment=HOST=127.0.0.1
+Environment=HTTPS=1
+Environment=IIBPAC_DATOS=/home/balu/iibpac-datos
+Restart=always
+RestartSec=3
+# protección: el servicio no puede tocar el resto del sistema
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/balu/iibpac-datos
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

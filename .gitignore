@@ -17,3 +17,6 @@ __pycache__/
 *.json
 !package.json
 *.ics
+
+# datos del servidor propio (programa, inscripciones, usuarios): nunca al repositorio
+iibpac-datos/

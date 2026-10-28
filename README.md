@@ -25,6 +25,11 @@ Calendario principal (mes y agenda, al estilo de Google Calendar) y un apartado 
 
 **Dónde se guarda:** en ningún caso en la página (es pública). Todo va en un archivo `moral-bienestar.json` en la carpeta compartida de la unidad. Con Edge o Chrome, «Abrir archivo» y cada cambio se escribe solo en ese archivo; si otra persona lo cambia a la vez, se juntan los cambios (gana lo último que se tocó de cada actividad) y cada 20 s se recogen los de los demás. En otros navegadores: abrir, trabajar y «Descargar copia» para sustituir el archivo. **Nunca subas ese archivo al repositorio.**
 
+
+### Con servidor propio (Raspberry)
+
+Si la página se sirve con `servidor/servidor.js` (ver `servidor/README.md`), la pestaña lo detecta sola y cambia a modo servidor: usuarios con contraseña (lectura, editor de clubs y maestro), todo se guarda en el servidor y cada actividad puede tener inscripción («Me apunto»), con plazas, reserva y lista descargable. En GitHub Pages sigue funcionando con el archivo .json.
+
 ## Privacidad
 
 - La página pide usuario y contraseña al entrar. Es una **cortina**, no seguridad real: la página es pública y funciona entera en el navegador. Lo que protege los datos es que el Excel nunca sale del equipo.
