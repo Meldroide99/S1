@@ -1,14 +1,21 @@
 # Servidor propio (Raspberry)
 
-Con esto la página funciona en tu propio servidor, con usuarios de verdad para **Moral y Bienestar**:
+Con esto la página funciona en tu propio servidor, con **cuentas personales** para Moral y Bienestar:
 
-| Tipo | Qué puede hacer |
+- Cada persona se registra con el **código de la unidad**, confirma su correo y **tú apruebas la cuenta**. Nadie entra sin tu aprobación.
+- **Permisos por catálogo**: cada cosa que se puede hacer es un permiso, y los tipos de cuenta (roles) son grupos de permisos guardados en `roles.json`, no fijos en el código.
+
+| Tipo de cuenta | Qué puede hacer |
 | --- | --- |
-| **Lectura** (la mayoría) | Ver el calendario y los apartados, y apuntarse a actividades |
-| **Editor** | Lo anterior y editar los clubs que le asigne el maestro |
-| **Maestro** | Todo: apartados, jefes, nombre del programa, usuarios y copias |
+| **Personal** | Ver el calendario y los apartados, y apuntarse a actividades |
+| **Editor de clubs** | Lo anterior, y editar y convocar en los clubs que tenga asignados |
+| **Maestro** | Todo: apartados, usuarios, solicitudes, ajustes, correo y copias |
 
-No necesita instalar nada más que Node.js. Los datos (programa, inscripciones, usuarios y sesiones) se guardan en `~/iibpac-datos`, **fuera del repositorio**. Ese repositorio es público, así que esa carpeta no se sube nunca a GitHub.
+- **Avisos por correo**: al convocar a alguien, cuando cambia o se cancela una actividad suya, cuando sale de la reserva y **el día anterior** (recordatorio).
+- **Contraseña olvidada**: cada uno se la cambia solo, por correo.
+- La sesión dura 90 días en cada aparato, y el navegador recuerda la contraseña.
+
+No necesita instalar nada más que Node.js. Los datos (programa, inscripciones, usuarios, sesiones y ajustes) se guardan en `~/iibpac-datos`, **fuera del repositorio**. Ese repositorio es público, así que esa carpeta no se sube nunca a GitHub.
 
 ## Montaje en la Raspberry (una vez)
 
@@ -41,9 +48,9 @@ No necesita instalar nada más que Node.js. Los datos (programa, inscripciones, 
    ```
 7. **Probar en casa.** Desde la Raspberry: `curl localhost:8080/api/yo` tiene que responder `{"modo":"servidor",…}`.
 8. **Salir a internet con Cloudflare Tunnel.** En Cloudflare Zero Trust → Redes → Túneles → Crear túnel. Instala `cloudflared` con el comando que te da el panel y apunta tu dominio a `http://localhost:8080`. No hace falta abrir puertos en el router.
-9. **Crear los usuarios.** Entra en tu dominio → Moral y Bienestar → con tu usuario maestro → botón **Usuarios**:
-   - un usuario de **Lectura** para todo el personal (por ejemplo `personal`);
-   - un **Editor** por club, marcando sus clubs.
+9. **Correo.** Crea una cuenta gratuita en [Brevo](https://www.brevo.com) o [Resend](https://resend.com) y verifica tu dominio en el servicio. Para eso añades en Cloudflare los registros DNS que te indique, y así los correos no acaban en «no deseado». Saca una clave (API key). Después, en la página: menú ⋯ → **Ajustes del servidor y correo** → elige el servicio, pon el remitente (`avisos@tudominio.es`) y la clave → **Enviarme un correo de prueba**. Pon también la dirección de la página (`https://tudominio.es`), que es la que va en los enlaces de los correos.
+   Mientras no lo configures, los correos no se envían: quedan apuntados en `~/iibpac-datos/correos.log`.
+10. **Abrir el registro.** Botón **Usuarios** → **Abrir con código**. Da ese código solo dentro de la unidad. Cuando alguien se registre, te llegará un correo y verás la solicitud en **Usuarios**, donde eliges su tipo de cuenta y la apruebas. A los editores, después, **Cambiar** → marca sus clubs.
 
 ## Día a día
 
@@ -52,7 +59,8 @@ No necesita instalar nada más que Node.js. Los datos (programa, inscripciones, 
   cd ~/S1 && git pull && sudo systemctl restart iibpac
   ```
 - **Copias de seguridad.** Hay una copia automática al día en `~/iibpac-datos/copias` (se guardan 60 días). Guarda además, de vez en cuando, una copia fuera de la Raspberry: menú ⋯ → «Descargar copia de seguridad».
-- **Olvidé una contraseña.** `node ~/S1/servidor/admin.js clave <usuario>`
+- **Alguien olvidó su contraseña.** La cambia solo con «He olvidado mi contraseña». Si su correo no funciona, ponle una nueva desde **Usuarios → Cambiar**, o por SSH: `node ~/S1/servidor/admin.js clave <usuario>`.
+- **Si el código de registro se filtra**: Usuarios → **Generar otro** (el viejo deja de valer) o **Cerrar el registro**.
 - **Ver usuarios.** `node ~/S1/servidor/admin.js usuarios`
 - **Ver qué pasa.** `journalctl -u iibpac -f`
 
@@ -60,7 +68,9 @@ No necesita instalar nada más que Node.js. Los datos (programa, inscripciones, 
 
 - Las contraseñas se guardan cifradas (scrypt), nunca en claro.
 - Tras 8 intentos fallidos desde un mismo sitio, se bloquea 15 minutos.
-- Las sesiones duran 30 días y se cierran al cambiar la contraseña.
+- Las sesiones duran 90 días y se cierran al cambiar la contraseña o al bloquear la cuenta.
+- Registro solo con código de la unidad, correo confirmado y aprobación. Los enlaces de los correos son de un solo uso y caducan (3 días para confirmar el correo, 1 hora para cambiar la contraseña).
+- La clave del servicio de correo se guarda en el servidor y nunca se manda a la página.
 - El servidor comprueba los permisos de cada cambio: aunque alguien manipule la página, un lector no puede editar y un editor no puede tocar clubs ajenos.
 - Solo escucha en la propia Raspberry (`127.0.0.1`); desde fuera solo se entra por el túnel de Cloudflare (con HTTPS).
 - No sirve el código del servidor, ni los archivos ocultos, ni ningún `.json`.

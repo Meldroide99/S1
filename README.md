@@ -28,7 +28,7 @@ Calendario principal (mes y agenda, al estilo de Google Calendar) y un apartado 
 
 ### Con servidor propio (Raspberry)
 
-Si la página se sirve con `servidor/servidor.js` (ver `servidor/README.md`), la pestaña lo detecta sola y cambia a modo servidor: usuarios con contraseña (lectura, editor de clubs y maestro), todo se guarda en el servidor y cada actividad puede tener inscripción («Me apunto»), con plazas, reserva y lista descargable. En GitHub Pages sigue funcionando con el archivo .json.
+Si la página se sirve con `servidor/servidor.js` (ver `servidor/README.md`), la pestaña lo detecta sola y cambia a modo servidor: cuentas personales (registro con código de la unidad, correo confirmado y aprobación), permisos por catálogo y roles editables, todo guardado en el servidor, inscripciones («Me apunto») y convocatorias con plazas, reserva y lista descargable, y avisos por correo (convocatoria, cambios y recordatorio el día anterior). En GitHub Pages sigue funcionando con el archivo .json.
 
 ## Privacidad
 

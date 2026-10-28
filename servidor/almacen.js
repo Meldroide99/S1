@@ -116,7 +116,44 @@ function importar(d, previo) {
   return m;
 }
 
+// ===================================================================== permisos y roles
+/* Cada cosa que se puede hacer es un PERMISO. Los ROLES son grupos de permisos y se guardan en
+ * roles.json (en la carpeta de datos), así se pueden crear o cambiar sin tocar el código. */
+const PERMISOS = [
+  { k: 'moral.ver', n: 'Ver el calendario y los apartados', g: 'Moral y Bienestar' },
+  { k: 'moral.apuntarse', n: 'Apuntarse a actividades', g: 'Moral y Bienestar' },
+  { k: 'moral.editar_clubs', n: 'Editar las actividades y datos de sus clubs', g: 'Moral y Bienestar' },
+  { k: 'moral.convocar', n: 'Convocar personal y gestionar inscripciones (de sus clubs)', g: 'Moral y Bienestar' },
+  { k: 'moral.editar_todo', n: 'Editar cualquier actividad y apartado', g: 'Moral y Bienestar' },
+  { k: 'moral.apartados', n: 'Crear y eliminar apartados y cambiar el nombre del programa', g: 'Moral y Bienestar' },
+  { k: 'usuarios.aprobar', n: 'Aprobar o rechazar solicitudes de cuenta', g: 'Usuarios' },
+  { k: 'usuarios.gestionar', n: 'Crear, cambiar, bloquear y borrar usuarios', g: 'Usuarios' },
+  { k: 'sistema.ajustes', n: 'Ajustes del servidor, correo, copias e importación', g: 'Sistema' },
+];
+const ROLES_DEF = {
+  lector: { nombre: 'Personal', descripcion: 'Ve todo y se apunta a actividades', permisos: ['moral.ver', 'moral.apuntarse'] },
+  editor: { nombre: 'Editor de clubs', descripcion: 'Además edita y convoca en los clubs que tenga asignados', permisos: ['moral.ver', 'moral.apuntarse', 'moral.editar_clubs', 'moral.convocar'] },
+  maestro: { nombre: 'Maestro', descripcion: 'Todo', permisos: PERMISOS.map(p => p.k) },
+};
+function leerRoles() {
+  const r = leerJSON('roles.json', null);
+  if (r && typeof r === 'object' && r.maestro) { r.maestro.permisos = PERMISOS.map(p => p.k); return r; } // el maestro siempre lo tiene todo
+  return JSON.parse(JSON.stringify(ROLES_DEF));
+}
+const nuevoIdUsuario = () => 'u' + crypto.randomBytes(6).toString('hex');
+/** Completa usuarios de versiones anteriores (sin id, estado…). */
+function normalizarUsuario(u) {
+  u.id = u.id || nuevoIdUsuario();
+  u.estado = u.estado || 'activo';
+  u.rol = u.rol || 'lector'; u.clubs = Array.isArray(u.clubs) ? u.clubs : [];
+  u.correo = u.correo || ''; u.correoOk = !!u.correoOk;
+  u.empleo = u.empleo || ''; u.nombre = u.nombre || '';
+  u.avisos = Object.assign({ correo: true }, u.avisos || {});
+  return u;
+}
+
 module.exports = {
   DATOS, leerJSON, escribirJSON, copiaDiaria, hashClave, comprobarClave,
   limpiarEvento, limpiarApartado, moralVacio, importar, txt, id, fecha, RE_FECHA,
+  PERMISOS, ROLES_DEF, leerRoles, nuevoIdUsuario, normalizarUsuario,
 };

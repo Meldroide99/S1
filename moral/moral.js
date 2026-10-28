@@ -119,7 +119,7 @@
   // ===================================================================== modo servidor
   const S = {
     modo: null, // 'servidor' | 'archivo' (null = aún no se sabe)
-    usuario: null, hayUsuarios: true, rev: 0, base: null, enviando: false, pendiente: false, otraVez: false, error: '', guardadoEn: 0, fallo: '',
+    usuario: null, hayUsuarios: true, registroAbierto: false, solicitudes: 0, pantalla: 'entrar', aviso: '', hecho: null, token: '', rev: 0, base: null, enviando: false, pendiente: false, otraVez: false, error: '', guardadoEn: 0, fallo: '',
     disp: (() => { // identifica este navegador para poder quitarse uno mismo de una inscripción
       let d = ''; try { d = localStorage.getItem('iibpac.moral.disp') || ''; if (!d) { d = nuevoId('d') + nuevoId(''); localStorage.setItem('iibpac.moral.disp', d); } } catch (e) { d = d || nuevoId('d') + nuevoId(''); }
       return d;
@@ -131,8 +131,8 @@
     if (cuerpo) { h['Content-Type'] = 'application/json'; h['X-Iibpac'] = '1'; }
     const r = await fetch('api/' + ruta, { method: cuerpo ? 'POST' : 'GET', credentials: 'same-origin', headers: h, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: 'no-store' });
     let j = {}; try { j = await r.json(); } catch (e) { /* sin cuerpo */ }
-    if (r.status === 401 && ruta !== 'login') { S.usuario = null; E.datos = null; E.part = {}; setTimeout(() => repintar(true), 0); }
-    if (!r.ok) throw Object.assign(new Error(j.error || `Error ${r.status} del servidor.`), { status: r.status });
+    if (r.status === 401 && S.usuario && ruta !== 'login') { S.usuario = null; E.datos = null; E.part = {}; setTimeout(() => repintar(true), 0); }
+    if (!r.ok) throw Object.assign(new Error(j.error || `Error ${r.status} del servidor.`), { status: r.status, codigo: j.codigo });
     return j;
   }
   async function detectar() {
@@ -142,7 +142,7 @@
       const r = await fetch('api/yo', { credentials: 'same-origin', signal: c.signal, cache: 'no-store', headers: { 'X-Dispositivo': S.disp } });
       clearTimeout(t);
       const j = await r.json();
-      if (j && j.modo === 'servidor') { S.modo = 'servidor'; S.usuario = j.usuario; S.hayUsuarios = j.hayUsuarios; E.datos = null; E.archivo = null; return; }
+      if (j && j.modo === 'servidor') { S.modo = 'servidor'; S.usuario = j.usuario; S.hayUsuarios = j.hayUsuarios; S.registroAbierto = j.registroAbierto; E.datos = null; E.archivo = null; await enlacesDeCorreo(); return; }
     } catch (e) { /* no hay servidor */ }
     S.modo = 'archivo';
   }
@@ -159,10 +159,11 @@
     E.datos = normalizar(d); E.part = d.participaciones || {};
     S.rev = rev; S.base = foto(E.datos); S.fallo = '';
   }
-  async function cargar() { const j = await api('estado'); aplicarServidor(j.datos, j.rev); }
+  async function cargar() { const j = await api('estado'); aplicarServidor(j.datos, j.rev); S.solicitudes = j.solicitudes || 0; }
   async function refrescar(forzar) {
     if (!S.usuario) return;
     const j = await api('estado' + (forzar ? '' : '?rev=' + S.rev));
+    if ((j.solicitudes || 0) !== S.solicitudes) { S.solicitudes = j.solicitudes || 0; const b = $('#mb-barra'); if (b) b.outerHTML = htmlBarraArchivo(); pintarEstado(); }
     if (j.igual) return;
     aplicarServidor(j.datos, j.rev); repintar();
   }
@@ -198,15 +199,17 @@
   }, 15000);
 
   // ---------------------------------------------------- permisos (en modo archivo se puede todo)
-  const rol = () => (enServidor() ? (S.usuario ? S.usuario.rol : 'nadie') : 'maestro');
-  const esMaestro = () => rol() === 'maestro';
-  const misClubs = () => new Set(enServidor() && S.usuario && S.usuario.rol === 'editor' ? S.usuario.clubs : []);
+  /* Los permisos vienen del servidor (catálogo + roles editables). En modo archivo se puede todo. */
+  const tiene = p => !enServidor() || !!(S.usuario && (S.usuario.permisos || []).includes(p));
+  const esMaestro = () => tiene('moral.editar_todo'); // edita cualquier club
+  const misClubs = () => new Set(enServidor() && S.usuario && tiene('moral.editar_clubs') ? S.usuario.clubs || [] : []);
   const puedeAp = a => !!a && (esMaestro() || misClubs().has(a.id));
-  const puedeEv = e => esMaestro() || (rol() === 'editor' && e.apartados.some(id => misClubs().has(id)));
-  const puedeBorrarEv = e => esMaestro() || (rol() === 'editor' && e.apartados.length > 0 && e.apartados.every(id => misClubs().has(id)));
-  const puedeCrearEn = apId => esMaestro() || (rol() === 'editor' && (apId ? misClubs().has(apId) : misClubs().size > 0));
+  const puedeEv = e => esMaestro() || e.apartados.some(id => misClubs().has(id));
+  const puedeBorrarEv = e => esMaestro() || (e.apartados.length > 0 && e.apartados.every(id => misClubs().has(id)));
+  const puedeCrearEn = apId => esMaestro() || (apId ? misClubs().has(apId) : misClubs().size > 0);
+  const gestorDe = e => enServidor() && tiene('moral.convocar') && puedeEv(e);
+  const veUsuarios = () => tiene('usuarios.aprobar') || tiene('usuarios.gestionar');
   const apsEditables = () => E.datos.apartados.filter(a => puedeAp(a));
-  const NOMBRE_ROL = { maestro: 'Maestro', editor: 'Editor', lector: 'Lectura' };
 
   // ---------------------------------------------------- inscripciones
   const ins = e => e.inscripcion || { abierta: false, plazas: 0, cierre: '' };
@@ -481,7 +484,8 @@
       return `<div class="mb-barra" id="mb-barra"><div class="contenedor mb-barra-in">
       <span class="mb-estado-archivo" id="mb-estado-archivo"></span>
       <span class="mb-barra-acc">
-        ${esMaestro() ? `<button class="btn suave peq" type="button" data-mb="usuarios">${SVG.persona}Usuarios</button>` : ''}
+        ${veUsuarios() ? `<button class="btn suave peq mb-btn-usu" type="button" data-mb="usuarios">${SVG.persona}Usuarios${S.solicitudes ? `<span class="mb-badge" title="Solicitudes pendientes">${S.solicitudes}</span>` : ''}</button>` : ''}
+        <button class="btn suave peq" type="button" data-mb="cuenta">${SVG.persona}Mi cuenta</button>
         <button class="btn suave peq" type="button" data-mb="salir">Salir</button>
       </span></div></div>`;
     }
@@ -499,10 +503,11 @@
     if (enServidor()) {
       if (!S.usuario) return;
       const u = S.usuario;
-      const quien = `<b>${esc(u.nombre || u.usuario)}</b> · ${NOMBRE_ROL[u.rol] || u.rol}${u.rol === 'editor' && E.datos ? ' de ' + esc(u.clubs.map(id => (apartado(id) || {}).nombre).filter(Boolean).join(', ') || 'ningún club') : ''}`;
+      const clubs = misClubs().size && !esMaestro() && E.datos ? ' · ' + esc([...misClubs()].map(id => (apartado(id) || {}).nombre).filter(Boolean).join(', ')) : '';
+      const quien = `<b>${esc([u.empleo, u.nombre].filter(Boolean).join(' ') || u.usuario)}</b> · ${esc(u.rolNombre || u.rol)}${clubs}`;
       if (S.error) { cls = 'error'; txt = `${quien} · no se ha podido guardar (${esc(S.error)}) <button class="enlace" type="button" data-mb="reintentar">Reintentar</button>`; }
       else if (S.pendiente || S.enviando) { cls = 'aviso'; txt = `${quien} · guardando…`; }
-      else { cls = 'ok'; txt = `${quien}${S.guardadoEn ? ' · guardado ' + haceCuanto(S.guardadoEn) : u.rol === 'lector' ? ' · solo lectura' : ''}`; }
+      else { cls = 'ok'; txt = `${quien}${S.guardadoEn ? ' · guardado ' + haceCuanto(S.guardadoEn) : ''}`; }
       el.className = 'mb-estado-archivo ' + cls; el.innerHTML = `<i></i><span>${txt}</span>`;
       return;
     }
@@ -662,7 +667,7 @@
     return Object.assign({ id: nuevoId('e'), titulo: '', apartados: [], inicio: '', fin: '', hora: '', horaFin: '', color: '', estado: 'confirmado', prioridad: '', lugar: '', responsable: '', notas: '', mes: '', inscripcion: { abierta: false, plazas: 0, cierre: '' } }, campos);
   }
   function crearRapido(ancla, inicio, fin, apId) {
-    const aps = apsEditables(); if (!aps.length && !esMaestro()) return;
+    const aps = apsEditables(); if (!aps.length) return;
     if (!esMaestro() && !aps.some(a => a.id === apId)) apId = aps[0].id;
     const p = popover(ancla, `<form class="mb-rapido">
       <input class="mb-rap-tit" name="titulo" placeholder="Añade un título" autocomplete="off" autofocus>
@@ -674,7 +679,7 @@
     f.onsubmit = ev => { ev.preventDefault(); const e = datos(); if (!e.titulo) { f.titulo.focus(); return; } cerrarFlotantes(); guardarEvento(e); U.toast('Actividad guardada.'); };
     $('[data-mas]', p).onclick = () => { const e = datos(); cerrarFlotantes(); editor(e, true); };
   }
-  function verEvento(ancla, id, abrirForm) {
+  function verEvento(ancla, id) {
     const e = E.datos.eventos.find(x => x.id === id); if (!e) return;
     const aps = e.apartados.map(apartado).filter(Boolean);
     const rect = ancla.getBoundingClientRect ? ancla.getBoundingClientRect() : ancla;
@@ -694,15 +699,13 @@
         ${e.responsable ? `<div class="mb-ver-fila">${SVG.persona}<span>${esc(e.responsable)}</span></div>` : ''}
         ${e.notas ? `<div class="mb-ver-fila">${SVG.nota}<span class="mb-ver-notas">${esc(e.notas)}</span></div>` : ''}
         ${!e.inicio && ed ? `<div class="mb-ver-fila"><button class="btn oro peq" type="button" data-acc="fecha">${SVG.cal}Poner fecha</button></div>` : ''}
-      </div>${conIns(e) ? htmlParticipacion(e) : ''}</div>`, 'mb-pop-ver');
-    const reabrir = () => verEvento(rect, id);
-    if (abrirForm) mostrarFormIns(p);
-    p.addEventListener('submit', ev => { ev.preventDefault(); apuntar(ev.target, e, reabrir); });
+      </div>${conIns(e) || gestorDe(e) ? htmlParticipacion(e) : ''}</div>`, 'mb-pop-ver');
+    const reabrir = () => { if (E.datos.eventos.some(x => x.id === id)) verEvento(rect, id); };
     p.addEventListener('click', ev => {
       const b = ev.target.closest('[data-acc]'); if (!b) return;
       const acc = b.dataset.acc;
-      if (acc === 'apuntar') { mostrarFormIns(p); return; }
-      if (acc === 'no-apuntar') { $('.mb-part-form', p).classList.add('oculto'); $('[data-acc="apuntar"]', p)?.classList.remove('oculto'); return; }
+      if (acc === 'apuntar') { b.disabled = true; apuntar(e, reabrir); return; }
+      if (acc === 'convocar') { convocar(e, reabrir); return; }
       if (acc === 'desapuntar') { desapuntar(e, b.dataset.pid, reabrir); return; }
       if (acc === 'csv') { listaCsv(e); return; }
       if (acc === 'copiar-lista') { copiarLista(e); return; }
@@ -797,73 +800,90 @@
     };
   }
 
-  // ------------------------------------------------------------ inscripciones («Me apunto»)
+  // ------------------------------------------------------------ inscripciones y convocatorias
   const EMPLEOS = ['Sdo.', 'Cbo.', 'Cbo. 1º', 'Cbo. My.', 'Sgto.', 'Sgto. 1º', 'Bg.', 'Stte.', 'Sbmy.', 'Alf.', 'Tte.', 'Cap.', 'Cte.', 'Tcol.', 'Col.', 'Civil'];
-  const yo = () => { try { return JSON.parse(localStorage.getItem('iibpac.moral.yo') || '{}'); } catch (e) { return {}; } };
+  const nombreP = p => [p.empleo, p.nombre].filter(Boolean).join(' ');
   function htmlParticipacion(e) {
-    const l = parts(e.id), i = ins(e), abierta = insAbierta(e), gestor = puedeEv(e);
-    const mios = l.filter(p => p.mio); const y = yo();
-    const estado = abierta ? (i.cierre ? `Inscripción abierta hasta el ${fechaLarga(i.cierre)}` : 'Inscripción abierta') : 'Inscripción cerrada';
+    const l = parts(e.id), i = ins(e), abierta = insAbierta(e), gestor = gestorDe(e);
+    const mio = l.find(p => p.mio);
+    const estado = i.abierta ? (abierta ? (i.cierre ? `Inscripción abierta hasta el ${fechaLarga(i.cierre)}` : 'Inscripción abierta') : 'Plazo de inscripción terminado') : (l.length ? 'Participantes' : 'Sin inscripción abierta');
     const libres = i.plazas ? Math.max(0, i.plazas - l.filter(p => !p.reserva).length) : null;
     return `<div class="mb-part">
       <div class="mb-part-cab">${SVG.persona}<b>Participación</b><span class="mb-part-num">${esc(textoIns(e))}</span></div>
       <p class="mb-part-estado ${abierta ? 'abierta' : ''}">${esc(estado)}${libres !== null && abierta ? ` · ${libres ? libres + ' plaza' + (libres === 1 ? '' : 's') + ' libre' + (libres === 1 ? '' : 's') : 'completa: se entra en reserva'}` : ''}</p>
-      ${mios.map(p => `<div class="mb-part-yo">${SVG.check}<span>Apuntado: <b>${esc([p.empleo, p.nombre].filter(Boolean).join(' '))}</b>${p.reserva ? ' (reserva)' : ''}</span><button class="enlace" type="button" data-acc="desapuntar" data-pid="${p.id}">Quitar</button></div>`).join('')}
-      ${abierta ? `<button class="btn oro peq mb-part-btn" type="button" data-acc="apuntar">${SVG.mas}${mios.length ? 'Apuntar a otra persona' : 'Me apunto'}</button>
-      <form class="mb-part-form oculto" autocomplete="off">
-        <div class="mb-part-campos"><input name="empleo" placeholder="Empleo" list="mb-empleos-ins" value="${esc(mios.length ? '' : y.empleo || '')}" aria-label="Empleo">
-        <input name="nombre" placeholder="Nombre y apellidos" value="${esc(mios.length ? '' : y.nombre || '')}" required minlength="3" aria-label="Nombre y apellidos"></div>
-        <input name="nota" placeholder="Comentario (opcional)" aria-label="Comentario">
-        <datalist id="mb-empleos-ins">${EMPLEOS.map(x => `<option value="${x}">`).join('')}</datalist>
-        <div class="mb-part-pie"><button class="enlace" type="button" data-acc="no-apuntar">Cancelar</button><button class="btn oro peq" type="submit">Apuntarme</button></div>
-      </form>` : ''}
-      ${l.length ? `<details class="mb-part-lista" ${gestor || l.length <= 12 ? 'open' : ''}><summary>Lista de apuntados (${l.length})</summary><ol>${l.map(p => `<li class="${p.reserva ? 'reserva' : ''}"><span><b>${esc([p.empleo, p.nombre].filter(Boolean).join(' '))}</b>${p.nota ? `<small>${esc(p.nota)}</small>` : ''}</span>${p.reserva ? '<em>reserva</em>' : ''}${gestor || p.mio ? `<button class="mb-icono mb-part-x" type="button" data-acc="desapuntar" data-pid="${p.id}" title="Quitar de la lista" aria-label="Quitar de la lista">${SVG.cerrar}</button>` : ''}</li>`).join('')}</ol>
+      ${mio ? `<div class="mb-part-yo">${SVG.check}<span>${mio.tipo === 'convocado' ? 'Estás <b>convocado</b>' : 'Estás <b>apuntado</b>'}${mio.reserva ? ' (en reserva)' : ''}</span>${mio.tipo !== 'convocado' || gestor ? `<button class="enlace" type="button" data-acc="desapuntar" data-pid="${mio.id}">Quitarme</button>` : ''}</div>`
+        : abierta && tiene('moral.apuntarse') ? `<button class="btn oro peq mb-part-btn" type="button" data-acc="apuntar">${SVG.mas}Me apunto</button>` : ''}
+      ${gestor ? `<button class="btn suave peq mb-part-btn" type="button" data-acc="convocar">${SVG.persona}Convocar personal</button>` : ''}
+      ${l.length ? `<details class="mb-part-lista" ${gestor || l.length <= 12 ? 'open' : ''}><summary>Lista (${l.length})</summary><ol>${l.map(p => `<li class="${p.reserva ? 'reserva' : ''}"><span><b>${esc(nombreP(p))}</b>${p.nota ? `<small>${esc(p.nota)}</small>` : ''}</span>${p.tipo === 'convocado' ? '<em class="conv">convocado</em>' : ''}${p.reserva ? '<em>reserva</em>' : ''}${p.sinCuenta && gestor ? '<em class="sin">sin cuenta</em>' : ''}${gestor || p.mio ? `<button class="mb-icono mb-part-x" type="button" data-acc="desapuntar" data-pid="${p.id}" title="Quitar de la lista" aria-label="Quitar de la lista">${SVG.cerrar}</button>` : ''}</li>`).join('')}</ol>
         ${gestor ? `<p class="mb-part-exp"><button class="enlace" type="button" data-acc="csv">${SVG.abajo}Descargar lista (Excel)</button><button class="enlace" type="button" data-acc="copiar-lista">${SVG.copiar}Copiar</button></p>` : ''}</details>` : ''}
     </div>`;
   }
-  function mostrarFormIns(p) {
-    const f = $('.mb-part-form', p); if (!f) return;
-    f.classList.remove('oculto'); $('[data-acc="apuntar"]', p)?.classList.add('oculto');
-    // la ventanita ha crecido: que no se salga por abajo
-    const r = p.getBoundingClientRect();
-    if (r.bottom > innerHeight - 10) p.style.top = Math.max(10, innerHeight - r.height - 10) + 'px';
-    f.scrollIntoView({ block: 'nearest' });
-    (f.empleo.value ? f.nombre : f.empleo).focus();
-  }
-  async function apuntar(f, e, reabrir) {
-    if (!f.classList.contains('mb-part-form')) return;
-    const datos = { evento: e.id, empleo: f.empleo.value.trim(), nombre: f.nombre.value.trim(), nota: f.nota.value.trim() };
-    if (datos.nombre.length < 3) { f.nombre.focus(); return; }
-    const b = $('button[type=submit]', f); b.disabled = true;
-    try {
-      const j = await api('apuntarse', datos);
-      if (!parts(e.id).some(p => p.mio)) try { localStorage.setItem('iibpac.moral.yo', JSON.stringify({ empleo: datos.empleo, nombre: datos.nombre })); } catch (x) { /* nada */ }
-      tomarParticipaciones(j);
-      const yoP = parts(e.id).find(p => p.mio && p.nombre === datos.nombre);
-      U.toast(yoP && yoP.reserva ? `${datos.nombre}: apuntado en reserva (no quedan plazas).` : `${datos.nombre}: apuntado a «${e.titulo}».`);
-      reabrir();
-    } catch (x) { U.toast(x.message, 'error'); b.disabled = false; }
+  async function apuntar(e, reabrir) {
+    try { tomarParticipaciones(await api('apuntarse', { evento: e.id })); const yo = parts(e.id).find(p => p.mio); U.toast(yo && yo.reserva ? 'Apuntado en reserva: no quedan plazas. Te avisaremos si queda una libre.' : `Apuntado a «${e.titulo}».`); reabrir(); }
+    catch (x) { U.toast(x.message, 'error'); }
   }
   async function desapuntar(e, pid, reabrir) {
     const p = parts(e.id).find(x => x.id === pid); if (!p) return;
-    if (!p.mio && !confirm(`¿Quitar a ${[p.empleo, p.nombre].filter(Boolean).join(' ')} de «${e.titulo}»?`)) return;
-    try { tomarParticipaciones(await api('desapuntarse', { evento: e.id, id: pid })); U.toast('Inscripción quitada.'); reabrir(); } catch (x) { U.toast(x.message, 'error'); }
+    if (!p.mio && !confirm(`¿Quitar a ${nombreP(p)} de «${e.titulo}»? Le llegará un aviso.`)) return;
+    try { tomarParticipaciones(await api('desapuntarse', { evento: e.id, id: pid })); U.toast('Quitado de la lista.'); reabrir(); } catch (x) { U.toast(x.message, 'error'); }
   }
-  /** Tras apuntarse: si no hay cambios propios a medio guardar, se toma todo lo del servidor. */
+  /** Ventana para convocar: lista del personal con buscador, y gente sin cuenta. */
+  async function convocar(e, reabrir) {
+    let personas;
+    try { personas = (await api('personas')).personas; } catch (x) { U.toast(x.message, 'error'); return; }
+    const ya = new Set(parts(e.id).filter(p => !p.sinCuenta).map(p => [p.empleo, p.nombre].join('|')));
+    const marcados = new Set(), externos = [];
+    const m = modal(`<form class="mb-form-simple mb-convocar"><h3>Convocar a «${esc(e.titulo)}»</h3>
+      <p class="mb-ayuda">A quien tenga cuenta le llega un aviso por correo, y el recordatorio el día anterior.</p>
+      <label class="mb-conv-buscar">${SVG.buscar}<input type="search" name="q" placeholder="Buscar por nombre o empleo" autofocus></label>
+      <div class="mb-conv-sel"><button class="enlace" type="button" data-todos>Marcar los que se ven</button><span class="mb-conv-n"></span></div>
+      <div class="mb-conv-lista"></div>
+      <details class="mb-conv-ext"><summary>Añadir a alguien sin cuenta</summary>
+        <div class="mb-part-campos"><input name="xe" placeholder="Empleo" list="mb-empleos-conv"><input name="xn" placeholder="Nombre y apellidos"></div>
+        <datalist id="mb-empleos-conv">${EMPLEOS.map(x => `<option value="${x}">`).join('')}</datalist>
+        <button class="btn suave peq" type="button" data-ext>${SVG.mas}Añadir</button><div class="mb-conv-chips"></div></details>
+      <div class="mb-ed-pie"><span></span><button class="btn suave peq" type="button" data-cerrar>Cancelar</button><button class="btn oro" type="submit">Convocar</button></div></form>`, 'mb-modal-convocar');
+    const f = $('form', m);
+    const visiblesP = () => { const q = C.norm(f.q.value); return personas.filter(p => !q || C.norm(p.empleo + ' ' + p.nombre).includes(q)); };
+    const pintar = () => {
+      const l = visiblesP();
+      $('.mb-conv-lista', m).innerHTML = l.length ? l.map(p => { const esta = ya.has([p.empleo, p.nombre].join('|'));
+        return `<label class="mb-check mb-conv-p${esta ? ' ya' : ''}"><input type="checkbox" value="${p.id}" ${marcados.has(p.id) || esta ? 'checked' : ''} ${esta ? 'disabled' : ''}> <span>${esc(nombreP(p))}</span>${esta ? '<small>ya está</small>' : ''}</label>`; }).join('') : '<p class="mb-nada">Nadie con ese nombre.</p>';
+      $('.mb-conv-n', m).textContent = marcados.size + externos.length ? `${marcados.size + externos.length} para convocar` : '';
+      $('.mb-conv-chips', m).innerHTML = externos.map((x, i) => `<span class="mb-chip-ext">${esc(nombreP(x))}<button type="button" data-quitar-ext="${i}" aria-label="Quitar">${SVG.cerrar}</button></span>`).join('');
+    };
+    pintar();
+    f.q.addEventListener('input', pintar);
+    f.addEventListener('change', ev => { const c = ev.target; if (c.type !== 'checkbox') return; c.checked ? marcados.add(c.value) : marcados.delete(c.value); pintar(); });
+    m.addEventListener('click', ev => {
+      const b = ev.target.closest('button'); if (!b) return;
+      if (b.dataset.cerrar !== undefined) m.remove();
+      if (b.dataset.todos !== undefined) { visiblesP().forEach(p => { if (!ya.has([p.empleo, p.nombre].join('|'))) marcados.add(p.id); }); pintar(); }
+      if (b.dataset.ext !== undefined) { const n = f.xn.value.trim(); if (n.length < 3) { f.xn.focus(); return; } externos.push({ empleo: f.xe.value.trim(), nombre: n }); f.xn.value = ''; f.xe.value = ''; pintar(); f.xe.focus(); }
+      if (b.dataset.quitarExt !== undefined) { externos.splice(+b.dataset.quitarExt, 1); pintar(); }
+    });
+    f.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      if (!marcados.size && !externos.length) { U.toast('Marca a alguien primero.', 'error'); return; }
+      try { const j = await api('convocar', { evento: e.id, usuarios: [...marcados], externos }); m.remove(); tomarParticipaciones(j); U.toast(`${j.n} convocado${j.n === 1 ? '' : 's'}.`); reabrir(); }
+      catch (x) { U.toast(x.message, 'error'); }
+    });
+  }
+  /** Tras apuntarse o convocar: si no hay cambios propios a medio guardar, se toma todo lo del servidor. */
   function tomarParticipaciones(j) {
     if (!j || !j.datos) return;
     if (!S.pendiente && !S.enviando) aplicarServidor(j.datos, j.rev); else E.part = j.datos.participaciones || {};
     repintar();
   }
-  function filasLista(e) { return parts(e.id).map((p, i) => [i + 1, p.empleo, p.nombre, p.nota, p.reserva ? 'Reserva' : '', new Date(p.fecha).toLocaleString('es-ES')]); }
+  function filasLista(e) { return parts(e.id).map((p, i) => [i + 1, p.empleo, p.nombre, p.tipo === 'convocado' ? 'Convocado' : 'Apuntado', p.reserva ? 'Reserva' : '', p.nota, new Date(p.fecha).toLocaleString('es-ES')]); }
   function listaCsv(e) {
     const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-    const filas = [['Nº', 'Empleo', 'Nombre', 'Comentario', 'Reserva', 'Apuntado el'], ...filasLista(e)];
+    const filas = [['Nº', 'Empleo', 'Nombre', 'Cómo', 'Reserva', 'Comentario', 'Fecha'], ...filasLista(e)];
     const txt = '﻿' + `${q(e.titulo)}${e.inicio ? ';' + q(textoFechas(e)) : ''}\r\n\r\n` + filas.map(f => f.map(q).join(';')).join('\r\n');
-    U.descargar(new Blob([txt], { type: 'text/csv;charset=utf-8' }), C.nombreArchivo('apuntados_' + (e.titulo || 'actividad')) + '.csv');
+    U.descargar(new Blob([txt], { type: 'text/csv;charset=utf-8' }), C.nombreArchivo('lista_' + (e.titulo || 'actividad')) + '.csv');
   }
   async function copiarLista(e) {
-    const txt = `${e.titulo}${e.inicio ? ' · ' + textoFechas(e) : ''}\n` + filasLista(e).map(f => `${f[0]}. ${[f[1], f[2]].filter(Boolean).join(' ')}${f[4] ? ' (reserva)' : ''}${f[3] ? ' — ' + f[3] : ''}`).join('\n');
+    const txt = `${e.titulo}${e.inicio ? ' · ' + textoFechas(e) : ''}\n` + filasLista(e).map(f => `${f[0]}. ${[f[1], f[2]].filter(Boolean).join(' ')}${f[4] ? ' (reserva)' : ''}${f[5] ? ' — ' + f[5] : ''}`).join('\n');
     try { await navigator.clipboard.writeText(txt); U.toast('Lista copiada. Pégala donde quieras.'); } catch (x) { U.toast('No se pudo copiar.', 'error'); }
   }
 
@@ -945,14 +965,15 @@
       <button type="button" data-m="ics">${SVG.cal}Pasar a Outlook / Google (.ics)</button>
       <button type="button" data-m="imprimir">${SVG.imprimir}Imprimir el mes</button>
       <button type="button" data-m="jefes">${SVG.persona}Imprimir la lista de jefes</button>
-      ${esMaestro() ? `<button type="button" data-m="titulo">${SVG.lapiz}Nombre del programa</button>` : ''}
-      ${!enServidor() ? `<hr><button type="button" data-m="descargar">${SVG.abajo}Descargar copia del archivo</button>` : esMaestro() ? `<hr>
-      <button type="button" data-m="usuarios">${SVG.persona}Usuarios y contraseñas</button>
+      ${tiene('moral.apartados') ? `<button type="button" data-m="titulo">${SVG.lapiz}Nombre del programa</button>` : ''}
+      ${!enServidor() ? `<hr><button type="button" data-m="descargar">${SVG.abajo}Descargar copia del archivo</button>` : tiene('sistema.ajustes') ? `<hr>
+      <button type="button" data-m="usuarios">${SVG.persona}Usuarios y solicitudes</button>
+      <button type="button" data-m="ajustes">${SVG.ajustes}Ajustes del servidor y correo</button>
       <button type="button" data-m="exportar">${SVG.abajo}Descargar copia de seguridad</button>
       <button type="button" data-m="importar">${SVG.archivo}Cargar un archivo .json…</button>` : ''}</div>`, 'mb-pop-menu');
     p.addEventListener('click', ev => {
       const b = ev.target.closest('[data-m]'); if (!b) return; cerrarFlotantes();
-      ({ ics: exportarIcs, imprimir: () => imprimir('mes'), jefes: () => imprimir('jefes'), titulo: editarTitulo, descargar, usuarios: panelUsuarios, exportar: exportarSrv, importar: () => elegirImportar() }[b.dataset.m])();
+      ({ ics: exportarIcs, imprimir: () => imprimir('mes'), jefes: () => imprimir('jefes'), titulo: editarTitulo, descargar, usuarios: panelUsuarios, ajustes: panelAjustes, exportar: exportarSrv, importar: () => elegirImportar() }[b.dataset.m])();
     });
   }
   function exportarIcs() {
@@ -1013,7 +1034,7 @@
   function htmlApartados() {
     const g = grupos();
     return `<div class="mb-aps">${g.map(n => `<div class="mb-grupo"><h3>${esc(n)}</h3><div class="mb-aps-grid">${E.datos.apartados.filter(a => (a.grupo || 'Otros') === n).map(tarjetaAp).join('')}</div></div>`).join('')}
-      ${esMaestro() ? `<button class="mb-card mb-card-nuevo" type="button" data-mb="nuevo-ap">${SVG.mas}<span>Nuevo apartado</span></button>` : ''}</div>`;
+      ${tiene('moral.apartados') ? `<button class="mb-card mb-card-nuevo" type="button" data-mb="nuevo-ap">${SVG.mas}<span>Nuevo apartado</span></button>` : ''}</div>`;
   }
   function editarJefe(ancla, a) {
     const p = popover(ancla, `<form class="mb-form-simple mb-jefe-form"><h3>Jefe de «${esc(a.nombre)}»</h3>
@@ -1039,7 +1060,7 @@
         ${/^data:/.test(a.foto) ? `<button type="button" data-foto="${esc(a.foto)}" aria-pressed="true" style="background-image:url('${a.foto}')" title="Foto propia"></button>` : ''}
         <label class="mb-subir">${SVG.foto}<span>Subir foto</span><input type="file" accept="image/*" hidden></label></div>
         <small class="mb-ayuda">La foto subida se guarda ${enServidor() ? 'en el servidor' : 'dentro del archivo'} (reducida), así la ve todo el mundo.</small></div>
-      <div class="mb-ed-pie">${nuevo || !esMaestro() ? '' : `<button class="btn suave peq mb-borrar" type="button" data-borrar>${SVG.papelera}Eliminar apartado</button>`}<span></span>
+      <div class="mb-ed-pie">${nuevo || !tiene('moral.apartados') ? '' : `<button class="btn suave peq mb-borrar" type="button" data-borrar>${SVG.papelera}Eliminar apartado</button>`}<span></span>
         <button class="btn suave peq" type="button" data-cerrar>Cancelar</button><button class="btn oro" type="submit">Guardar</button></div></form>`);
     const f = $('form', m); const sel = { color: a.color, icono: a.icono, foto: a.foto };
     f.addEventListener('click', ev => {
@@ -1096,19 +1117,45 @@
     if (!rutaActual) { const ap = $('#mb-apartados', raizActual); if (ap) ap.innerHTML = htmlApartados(); pintarCabPortada(); }
     else pintarCabAp();
   }
-  function htmlBienvenida() {
-    if (enServidor()) {
-      if (S.usuario && S.fallo) return `<div class="mb-bienvenida"><span class="eyebrow">Sin conexión</span><h2>No se ha podido cargar el programa</h2><p>${esc(S.fallo)}</p><div class="mb-bien-acc"><button class="btn oro" type="button" data-mb="recargar">Volver a intentarlo</button></div></div>`;
-      return `<div class="mb-bienvenida mb-login">
-      <span class="eyebrow">Acceso</span>
-      <h2>Entra para ver el programa</h2>
-      ${S.hayUsuarios ? '<p>Con tu usuario y contraseña. Si no los tienes, pídeselos al responsable de Moral y Bienestar.</p>' : '<p>Aún no hay ningún usuario. Créalo en el servidor con <code>node servidor/admin.js maestro &lt;usuario&gt;</code> y vuelve aquí.</p>'}
+  /* Pantallas de acceso del modo servidor: entrar, crear cuenta, contraseña olvidada, contraseña nueva. */
+  function htmlAcceso() {
+    const P = S.pantalla || 'entrar';
+    const aviso = S.aviso ? `<div class="mb-acceso-aviso ${S.aviso.tipo || ''}">${S.aviso.html}</div>` : '';
+    const enlaces = (...l) => `<p class="mb-acceso-enlaces">${l.map(([p, t]) => `<button class="enlace" type="button" data-mb="pantalla" data-p="${p}">${t}</button>`).join('<span>·</span>')}</p>`;
+    const caja = (eyebrow, titulo, cuerpo) => `<div class="mb-bienvenida mb-login"><span class="eyebrow">${eyebrow}</span><h2>${titulo}</h2>${aviso}${cuerpo}</div>`;
+    if (!S.hayUsuarios) return caja('Primer arranque', 'Aún no hay usuarios', '<p>Crea tu usuario maestro en el servidor con <code>node servidor/admin.js maestro &lt;usuario&gt;</code> y recarga esta página.</p>');
+    if (P === 'registro') return caja('Crear cuenta', 'Pide tu cuenta', `<p>Necesitas el <b>código de la unidad</b>. Después confirmarás tu correo y el responsable aprobará la cuenta.</p>
+      <form class="mb-login-form" id="mb-registro" autocomplete="on">
+        <label>Código de la unidad<input name="codigo" autocomplete="off" autocapitalize="characters" spellcheck="false" required></label>
+        <div class="mb-login-dos"><label>Empleo<input name="empleo" list="mb-empleos-reg" autocomplete="honorific-prefix" required></label><label>Nombre y apellidos<input name="nombre" autocomplete="name" required minlength="5"></label></div>
+        <datalist id="mb-empleos-reg">${EMPLEOS.map(x => `<option value="${x}">`).join('')}</datalist>
+        <label>Correo (el que mires: ahí te llegarán los avisos)<input name="correo" type="email" autocomplete="email" required></label>
+        <label>Usuario para entrar<input name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="32" placeholder="sin acentos ni espacios"></label>
+        <div class="mb-login-dos"><label>Contraseña<input name="clave" type="password" autocomplete="new-password" required minlength="8" placeholder="mínimo 8"></label><label>Repítela<input name="clave2" type="password" autocomplete="new-password" required minlength="8"></label></div>
+        <p class="mb-login-error" hidden></p>
+        <button class="btn oro" type="submit">Pedir cuenta</button>
+      </form>${enlaces(['entrar', 'Ya tengo cuenta'])}`);
+    if (P === 'olvide') return caja('Contraseña', '¿Has olvidado tu contraseña?', `<p>Escribe tu correo o tu usuario y te mandaremos un enlace para poner una nueva.</p>
+      <form class="mb-login-form" id="mb-olvide"><label>Correo o usuario<input name="correo" autocomplete="username" autocapitalize="none" required autofocus></label>
+        <p class="mb-login-error" hidden></p><button class="btn oro" type="submit">Enviar enlace</button></form>${enlaces(['entrar', 'Volver a entrar'])}`);
+    if (P === 'restablecer') return caja('Contraseña', 'Pon tu contraseña nueva', `<form class="mb-login-form" id="mb-restablecer">
+        <input type="text" name="usuario" autocomplete="username" hidden>
+        <label>Contraseña nueva<input name="clave" type="password" autocomplete="new-password" required minlength="8" autofocus placeholder="mínimo 8"></label>
+        <label>Repítela<input name="clave2" type="password" autocomplete="new-password" required minlength="8"></label>
+        <p class="mb-login-error" hidden></p><button class="btn oro" type="submit">Guardar contraseña</button></form>`);
+    if (P === 'hecho') return caja(S.hecho.eyebrow, S.hecho.titulo, `<p>${S.hecho.texto}</p>${enlaces(['entrar', 'Ir a entrar'])}`);
+    return caja('Acceso', 'Entra para ver el programa', `<p>Con tu usuario (o correo) y tu contraseña. El navegador te ofrecerá recordarlos.</p>
       <form class="mb-login-form" id="mb-login" autocomplete="on">
-        <label>Usuario<input name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus></label>
+        <label>Usuario o correo<input name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus></label>
         <label>Contraseña<input name="clave" type="password" autocomplete="current-password" required></label>
         <p class="mb-login-error" hidden></p>
         <button class="btn oro" type="submit">Entrar</button>
-      </form></div>`;
+      </form>${enlaces(['olvide', 'He olvidado mi contraseña'], ...(S.registroAbierto ? [['registro', 'Crear cuenta']] : []))}`);
+  }
+  function htmlBienvenida() {
+    if (enServidor()) {
+      if (S.usuario && S.fallo) return `<div class="mb-bienvenida"><span class="eyebrow">Sin conexión</span><h2>No se ha podido cargar el programa</h2><p>${esc(S.fallo)}</p><div class="mb-bien-acc"><button class="btn oro" type="button" data-mb="recargar">Volver a intentarlo</button></div></div>`;
+      return htmlAcceso();
     }
     return `<div class="mb-bienvenida">
       <span class="eyebrow">Para empezar</span>
@@ -1191,22 +1238,109 @@
   }
 
   // ===================================================================== sesión y administración (modo servidor)
+  function errorForm(f, txt) { const e = $('.mb-login-error', f); e.innerHTML = txt; e.hidden = false; const b = $('button[type=submit]', f); if (b) b.disabled = false; }
   async function entrar(ev) {
     ev.preventDefault();
-    const f = ev.target, err = $('.mb-login-error', f), b = $('button[type=submit]', f);
-    b.disabled = true; err.hidden = true;
+    const f = ev.target, b = $('button[type=submit]', f);
+    b.disabled = true; $('.mb-login-error', f).hidden = true;
     try {
       const j = await api('login', { usuario: f.usuario.value.trim(), clave: f.clave.value });
-      S.usuario = j.usuario; S.fallo = ''; E.datos = null;
+      S.usuario = j.usuario; S.fallo = ''; S.aviso = ''; S.pantalla = 'entrar'; E.datos = null;
+      // pide al navegador que guarde la contraseña (además de su propio aviso)
+      try { if (window.PasswordCredential) navigator.credentials.store(new PasswordCredential({ id: f.usuario.value.trim(), password: f.clave.value })).catch(() => {}); } catch (x) { /* no pasa nada */ }
       vista(rutaActual);
       U.toast(`Hola, ${j.usuario.nombre || j.usuario.usuario}.`);
-    } catch (e) { err.textContent = e.message; err.hidden = false; b.disabled = false; f.clave.select(); }
+    } catch (e) {
+      if (e.codigo === 'verificar') errorForm(f, `${esc(e.message)} <button class="enlace" type="button" data-mb="reenviar" data-u="${esc(f.usuario.value.trim())}">Reenviar el correo</button>`);
+      else errorForm(f, esc(e.message));
+      if (f.clave) f.clave.select();
+    }
+  }
+  async function reenviarConfirmacion(usuario) {
+    try { await api('reenviar', { usuario }); U.toast('Si la cuenta existe, te hemos vuelto a mandar el correo. Mira también en «Correo no deseado».'); } catch (e) { U.toast(e.message, 'error'); }
+  }
+  async function registrarse(ev) {
+    ev.preventDefault();
+    const f = ev.target; $('button[type=submit]', f).disabled = true;
+    if (f.clave.value !== f.clave2.value) return errorForm(f, 'Las contraseñas no coinciden.');
+    try {
+      await api('registro', { codigo: f.codigo.value, empleo: f.empleo.value, nombre: f.nombre.value, correo: f.correo.value, usuario: f.usuario.value, clave: f.clave.value });
+      S.hecho = { eyebrow: 'Solicitud enviada', titulo: 'Mira tu correo', texto: `Te hemos enviado un enlace a <b>${esc(f.correo.value)}</b> para confirmar que es tuyo (mira también en «Correo no deseado»). Cuando lo confirmes y el responsable apruebe la cuenta, te llegará otro correo y ya podrás entrar.` };
+      S.pantalla = 'hecho'; S.aviso = ''; vista(rutaActual);
+    } catch (e) { errorForm(f, esc(e.message)); }
+  }
+  async function olvide(ev) {
+    ev.preventDefault();
+    const f = ev.target; $('button[type=submit]', f).disabled = true;
+    try {
+      await api('olvide', { correo: f.correo.value.trim() });
+      S.hecho = { eyebrow: 'Contraseña', titulo: 'Mira tu correo', texto: 'Si hay una cuenta con ese correo o usuario (y el correo está confirmado), te hemos mandado un enlace para poner una contraseña nueva. Vale una hora. Si no te llega, habla con el responsable.' };
+      S.pantalla = 'hecho'; vista(rutaActual);
+    } catch (e) { errorForm(f, esc(e.message)); }
+  }
+  async function restablecer(ev) {
+    ev.preventDefault();
+    const f = ev.target; $('button[type=submit]', f).disabled = true;
+    if (f.clave.value !== f.clave2.value) return errorForm(f, 'Las contraseñas no coinciden.');
+    try {
+      await api('restablecer', { token: S.token, clave: f.clave.value });
+      S.token = ''; S.pantalla = 'entrar'; S.aviso = { tipo: 'ok', html: 'Contraseña cambiada. Ya puedes entrar con ella.' }; vista(rutaActual);
+    } catch (e) { errorForm(f, esc(e.message)); }
+  }
+  /** Enlaces que llegan por correo: ?verificar=… o ?restablecer=… */
+  async function enlacesDeCorreo() {
+    const q = new URLSearchParams(location.search);
+    const limpiar = () => history.replaceState(null, '', location.pathname + location.hash);
+    if (q.get('restablecer')) { S.token = q.get('restablecer'); S.pantalla = 'restablecer'; limpiar(); }
+    if (q.get('verificar')) {
+      const t = q.get('verificar'); limpiar();
+      try {
+        const j = await api('verificar', { token: t });
+        S.aviso = { tipo: 'ok', html: j.pendiente ? '<b>Correo confirmado.</b> Ahora falta que el responsable apruebe tu cuenta: te avisaremos por correo.' : '<b>Correo confirmado.</b> Ya puedes entrar.' };
+        if (S.usuario) U.toast('Correo confirmado.');
+      } catch (e) { S.aviso = { tipo: 'error', html: esc(e.message) }; }
+    }
   }
   async function salir() {
     if (S.pendiente || S.enviando) await enviarCambios();
     try { await api('logout', {}); } catch (e) { /* da igual */ }
-    S.usuario = null; E.datos = null; E.part = {}; S.base = null; S.guardadoEn = 0;
+    try { if (navigator.credentials && navigator.credentials.preventSilentAccess) navigator.credentials.preventSilentAccess().catch(() => {}); } catch (e) { /* nada */ }
+    S.usuario = null; E.datos = null; E.part = {}; S.base = null; S.guardadoEn = 0; S.pantalla = 'entrar'; S.aviso = '';
     vista(rutaActual);
+  }
+  /** Mi cuenta: datos, correo, avisos, contraseña y mis actividades. */
+  function miCuenta() {
+    const u = S.usuario;
+    const mias = ordenar(E.datos.eventos.filter(e => parts(e.id).some(p => p.mio) && (!e.fin || e.fin >= hoyTxt()) && e.estado !== 'cancelado'));
+    const m = modal(`<form class="mb-form-simple mb-cuenta" autocomplete="on"><h3>Mi cuenta</h3>
+      <p class="mb-ayuda">Usuario <b>${esc(u.usuario)}</b> · ${esc(u.rolNombre || u.rol)}</p>
+      <div class="mb-dos"><label>Empleo<input name="empleo" value="${esc(u.empleo)}" list="mb-empleos-cta"></label><label>Nombre y apellidos<input name="nombre" value="${esc(u.nombre)}" autocomplete="name"></label></div>
+      <datalist id="mb-empleos-cta">${EMPLEOS.map(x => `<option value="${x}">`).join('')}</datalist>
+      <label>Correo<input name="correo" type="email" value="${esc(u.correo)}" autocomplete="email"></label>
+      <p class="mb-cta-correo ${u.correo ? (u.correoOk ? 'ok' : 'aviso') : 'aviso'}">${!u.correo ? 'Sin correo: no te llegarán avisos ni podrás recuperar la contraseña.' : u.correoOk ? `${SVG.check}Correo confirmado` : `Correo sin confirmar: no te llegan avisos. <button class="enlace" type="button" data-reenviar>Mandar otra vez el enlace</button>`}</p>
+      <label class="mb-check"><input type="checkbox" name="avisos" ${u.avisos && u.avisos.correo !== false ? 'checked' : ''}> Avisarme por correo (convocatorias, cambios y el día anterior)</label>
+      <details class="mb-cta-clave"><summary>Cambiar la contraseña</summary>
+        <input type="text" name="u" value="${esc(u.usuario)}" autocomplete="username" hidden>
+        <div class="mb-dos"><label>Actual<input name="claveActual" type="password" autocomplete="current-password"></label><label>Nueva<input name="claveNueva" type="password" autocomplete="new-password" minlength="8" placeholder="mínimo 8"></label></div>
+        <small class="mb-ayuda">Se cerrará la sesión en tus otros aparatos.</small></details>
+      <div class="mb-cta-mias"><h4>Mis próximas actividades</h4>${mias.length ? mias.map(e => { const p = parts(e.id).find(x => x.mio); return `<div class="mb-sf" style="--c:${colorEv(e)}"><i></i><span><b>${esc(e.titulo)}</b><small>${esc(textoFechas(e))}${p.tipo === 'convocado' ? ' · convocado' : ''}${p.reserva ? ' · reserva' : ''}</small></span></div>`; }).join('') : '<p class="mb-nada">Ninguna por ahora.</p>'}</div>
+      <div class="mb-ed-pie"><span></span><button class="btn suave peq" type="button" data-cerrar>Cerrar</button><button class="btn oro" type="submit">Guardar</button></div></form>`, 'mb-modal-cuenta');
+    const f = $('form', m);
+    m.addEventListener('click', async ev => {
+      const b = ev.target.closest('button'); if (!b) return;
+      if (b.dataset.cerrar !== undefined) m.remove();
+      if (b.dataset.reenviar !== undefined) { try { await api('cuenta', { reenviar: true }); U.toast('Enlace enviado. Mira también en «Correo no deseado».'); } catch (e) { U.toast(e.message, 'error'); } }
+    });
+    f.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const cuerpo = { empleo: f.empleo.value, nombre: f.nombre.value, correo: f.correo.value, avisos: { correo: f.avisos.checked } };
+      if (f.claveNueva.value) { cuerpo.claveActual = f.claveActual.value; cuerpo.claveNueva = f.claveNueva.value; }
+      try {
+        const j = await api('cuenta', cuerpo);
+        S.usuario = j.usuario; m.remove(); pintarEstado(); repintar();
+        U.toast(j.reenviado ? 'Guardado. Te hemos mandado un enlace para confirmar el correo nuevo.' : 'Guardado.');
+      } catch (e) { U.toast(e.message, 'error'); }
+    });
   }
   async function exportarSrv() {
     try {
@@ -1226,60 +1360,118 @@
     if (!confirm(`¿Sustituir TODO el programa del servidor por «${file.name}» (${(d.apartados || []).length} apartados, ${(d.eventos || []).length} actividades)?\n\nLas inscripciones de las actividades que sigan existiendo se conservan.`)) return;
     try { const j = await api('importar', d); aplicarServidor(j.datos, j.rev); repintar(true); U.toast('Programa cargado.'); } catch (e) { U.toast(e.message, 'error'); }
   }
+  /** Usuarios: solicitudes pendientes, código de registro y gestión de cuentas. */
   async function panelUsuarios() {
-    let lista;
-    try { lista = (await api('usuarios')).usuarios; } catch (e) { U.toast(e.message, 'error'); return; }
+    let D;
+    try { D = await api('usuarios'); } catch (e) { U.toast(e.message, 'error'); return; }
+    const gestiona = tiene('usuarios.gestionar');
     const aps = E.datos ? E.datos.apartados : [];
     const m = modal(`<div class="mb-form-simple mb-usuarios"><h3>Usuarios</h3>
-      <p class="mb-ayuda"><b>Lectura</b>: ve todo y se apunta a actividades. <b>Editor</b>: además edita los clubs que le marques. <b>Maestro</b>: todo, incluidos los usuarios.</p>
+      <div class="mb-usu-sol"></div>
+      ${gestiona ? '<div class="mb-usu-codigo"></div>' : ''}
+      <div class="mb-usu-cab"><h4>Cuentas</h4><label class="mb-buscar">${SVG.buscar}<input type="search" class="mb-usu-q" placeholder="Buscar"></label></div>
       <div class="mb-usu-lista"></div>
-      <form class="mb-usu-form" autocomplete="off"><h4>Nuevo usuario <small>o pulsa «Cambiar» en uno de la lista</small></h4>
-        <div class="mb-dos"><label>Usuario<input name="usuario" autocapitalize="none" spellcheck="false" placeholder="futbol" required maxlength="32"></label>
-        <label>Descripción (opcional)<input name="nombre" placeholder="Jefe de fútbol"></label></div>
-        <div class="mb-dos"><label>Tipo<select name="rol"><option value="lector">Lectura (la mayoría)</option><option value="editor">Editor de clubs</option><option value="maestro">Maestro</option></select></label>
+      ${gestiona ? `<form class="mb-usu-form" autocomplete="off"><h4><span class="mb-usu-tit">Crear una cuenta a mano</span> <small>(si alguien no puede registrarse solo)</small></h4>
+        <div class="mb-dos"><label>Empleo<input name="empleo" list="mb-empleos-usu"></label><label>Nombre y apellidos<input name="nombre"></label></div>
+        <datalist id="mb-empleos-usu">${EMPLEOS.map(x => `<option value="${x}">`).join('')}</datalist>
+        <div class="mb-dos"><label>Usuario<input name="usuario" autocapitalize="none" spellcheck="false" required maxlength="32"></label><label>Correo<input name="correo" type="email"></label></div>
+        <div class="mb-dos"><label>Tipo de cuenta<select name="rol">${D.roles.map(r => `<option value="${r.k}">${esc(r.nombre)}</option>`).join('')}</select></label>
         <label>Contraseña<input name="clave" type="text" minlength="8" placeholder="Mínimo 8 caracteres" autocomplete="new-password"></label></div>
-        <div class="mb-campo mb-usu-clubs oculto"><span>Clubs que puede editar</span><div class="mb-usu-checks">${aps.map(a => `<label class="mb-check"><input type="checkbox" name="club" value="${a.id}"> ${esc(a.nombre)}</label>`).join('')}</div></div>
-        <p class="mb-ayuda mb-usu-nota">Al cambiar la contraseña de alguien, se le cierra la sesión en todos sus aparatos.</p>
-        <div class="mb-ed-pie"><button class="enlace" type="button" data-limpiar>Vaciar</button><span></span><button class="btn suave peq" type="button" data-cerrar>Cerrar</button><button class="btn oro" type="submit">Guardar usuario</button></div>
-      </form></div>`, 'mb-modal-usuarios');
-    const f = $('form', m);
+        <div class="mb-campo mb-usu-clubs"><span>Clubs que puede editar y donde puede convocar</span><div class="mb-usu-checks">${aps.map(a => `<label class="mb-check"><input type="checkbox" name="club" value="${a.id}"> ${esc(a.nombre)}</label>`).join('')}</div></div>
+        <div class="mb-ed-pie"><button class="enlace" type="button" data-limpiar>Vaciar</button><span></span><button class="btn suave peq" type="button" data-cerrar>Cerrar</button><button class="btn oro" type="submit">Guardar cuenta</button></div>
+      </form>` : '<div class="mb-ed-pie"><span></span><button class="btn suave peq" type="button" data-cerrar>Cerrar</button></div>'}</div>`, 'mb-modal-usuarios');
+    const f = $('form', m); let editando = null;
     const nombreClub = id => (apartado(id) || {}).nombre || id;
-    const pintarLista = () => {
-      $('.mb-usu-lista', m).innerHTML = `<table class="mb-usu-tabla"><thead><tr><th>Usuario</th><th>Tipo</th><th>Clubs</th><th></th></tr></thead><tbody>${lista.map(u => `<tr>
-        <td><b>${esc(u.usuario)}</b>${u.nombre ? `<small>${esc(u.nombre)}</small>` : ''}</td><td>${NOMBRE_ROL[u.rol] || u.rol}</td>
-        <td>${u.rol === 'editor' ? esc(u.clubs.map(nombreClub).join(', ') || '—') : u.rol === 'maestro' ? 'Todos' : '—'}</td>
-        <td class="mb-usu-acc"><button class="enlace" type="button" data-cambiar="${esc(u.usuario)}">Cambiar</button>${u.usuario !== S.usuario.usuario ? `<button class="enlace mb-rojo" type="button" data-quitar="${esc(u.usuario)}">Borrar</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
+    const nomU = u => [u.empleo, u.nombre].filter(Boolean).join(' ') || u.usuario;
+    const rolNom = k => (D.roles.find(r => r.k === k) || {}).nombre || k;
+    const selRol = (sel, actual) => gestiona ? `<select data-rol="${sel}">${D.roles.map(r => `<option value="${r.k}" ${r.k === actual ? 'selected' : ''}>${esc(r.nombre)}</option>`).join('')}</select>` : '';
+    const pintar = () => {
+      const pend = D.usuarios.filter(u => u.estado === 'pendiente');
+      S.solicitudes = pend.length;
+      $('.mb-usu-sol', m).innerHTML = pend.length ? `<h4>Solicitudes pendientes <span class="mb-badge">${pend.length}</span></h4>${pend.map(u => `<div class="mb-sol">
+          <div><b>${esc(nomU(u))}</b><small>${esc(u.usuario)} · ${esc(u.correo)} ${u.correoOk ? '<span class="ok">✓ correo confirmado</span>' : '<span class="aviso">correo sin confirmar</span>'} · ${esc(fechaCorta(u.creado.slice(0, 10)))}</small></div>
+          <div class="mb-sol-acc">${selRol(u.id, 'lector')}<button class="btn oro peq" type="button" data-aprobar="${u.id}">Aprobar</button><button class="enlace mb-rojo" type="button" data-rechazar="${u.id}">Rechazar</button></div></div>`).join('')}` : '';
+      if (gestiona) $('.mb-usu-codigo', m).innerHTML = D.codigoRegistro
+        ? `<div class="mb-codigo"><div><span class="mb-codigo-et">Código para registrarse</span><b>${esc(D.codigoRegistro)}</b><small>Dalo solo dentro de la unidad. Si se filtra, genera otro: el viejo deja de valer.</small></div><div class="mb-sol-acc"><button class="btn suave peq" type="button" data-codigo="1">Generar otro</button><button class="enlace mb-rojo" type="button" data-codigo="0">Cerrar el registro</button></div></div>`
+        : `<div class="mb-codigo cerrado"><div><span class="mb-codigo-et">Registro cerrado</span><small>Nadie puede pedir cuenta. Ábrelo con un código para que el personal se registre solo.</small></div><div class="mb-sol-acc"><button class="btn oro peq" type="button" data-codigo="1">Abrir con código</button></div></div>`;
+      const q = C.norm(($('.mb-usu-q', m) || {}).value || '');
+      const l = D.usuarios.filter(u => u.estado !== 'pendiente' && (!q || C.norm([u.empleo, u.nombre, u.usuario, u.correo].join(' ')).includes(q)));
+      $('.mb-usu-lista', m).innerHTML = `<table class="mb-usu-tabla"><thead><tr><th>Persona</th><th>Correo</th><th>Tipo</th><th>Último acceso</th><th></th></tr></thead><tbody>${l.map(u => `<tr class="${u.estado === 'bloqueado' ? 'bloq' : ''}">
+        <td><b>${esc(nomU(u))}</b><small>${esc(u.usuario)}${u.estado === 'bloqueado' ? ' · <span class="mb-rojo">bloqueado</span>' : ''}</small></td>
+        <td>${u.correo ? `${esc(u.correo)}${u.correoOk ? ' <span class="ok" title="Confirmado">✓</span>' : ' <small>sin confirmar</small>'}` : '<small>—</small>'}</td>
+        <td>${esc(rolNom(u.rol))}${u.clubs.length && !u.permisos.includes('moral.editar_todo') ? `<small>${esc(u.clubs.map(nombreClub).join(', '))}</small>` : ''}</td>
+        <td><small>${u.ultimoAcceso ? esc(fechaCorta(u.ultimoAcceso)) : 'nunca'}</small></td>
+        <td class="mb-usu-acc">${gestiona ? `<button class="enlace" type="button" data-cambiar="${u.id}">Cambiar</button>${u.id !== S.usuario.id ? `<button class="enlace" type="button" data-bloquear="${u.id}">${u.estado === 'bloqueado' ? 'Desbloquear' : 'Bloquear'}</button><button class="enlace mb-rojo" type="button" data-quitar="${u.id}">Borrar</button>` : ''}` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="mb-nada">Nadie.</td></tr>'}</tbody></table>`;
+      const b = $('.mb-btn-usu .mb-badge'); if (b) { if (S.solicitudes) b.textContent = S.solicitudes; else b.remove(); }
     };
-    const verClubs = () => $('.mb-usu-clubs', m).classList.toggle('oculto', f.rol.value !== 'editor');
-    pintarLista();
-    f.rol.addEventListener('change', verClubs);
+    const verClubs = () => { if (!f) return; const r = D.roles.find(x => x.k === f.rol.value); const usa = r && !r.permisos.includes('moral.editar_todo') && (r.permisos.includes('moral.editar_clubs') || r.permisos.includes('moral.convocar')); $('.mb-usu-clubs', f).classList.toggle('oculto', !usa); };
+    if (f) { f.rol.addEventListener('change', verClubs); verClubs(); }
+    const limpiar = () => { if (!f) return; f.reset(); setTimeout(verClubs, 0); editando = null; f.usuario.readOnly = false; f.clave.placeholder = 'Mínimo 8 caracteres'; $('.mb-usu-tit', f).textContent = 'Crear una cuenta a mano'; };
+    pintar();
+    $('.mb-usu-q', m).addEventListener('input', pintar);
+    const llamar = async (ruta, cuerpo, ok) => { try { D = await api(ruta, cuerpo); pintar(); if (ok) U.toast(ok); return true; } catch (e) { U.toast(e.message, 'error'); return false; } };
+    m.addEventListener('click', async ev => {
+      const b = ev.target.closest('button'); if (!b) return;
+      if (b.dataset.cerrar !== undefined) { m.remove(); const bar = $('#mb-barra'); if (bar) bar.outerHTML = htmlBarraArchivo(); pintarEstado(); }
+      if (b.dataset.limpiar !== undefined) limpiar();
+      if (b.dataset.aprobar) { const sel = $(`[data-rol="${b.dataset.aprobar}"]`, m); await llamar('usuarios/aprobar', { id: b.dataset.aprobar, rol: sel ? sel.value : 'lector' }, 'Cuenta aprobada. Le llega un correo para que entre.'); }
+      if (b.dataset.rechazar && confirm('¿Rechazar esta solicitud? Se borra.')) await llamar('usuarios/rechazar', { id: b.dataset.rechazar }, 'Solicitud rechazada.');
+      if (b.dataset.codigo !== undefined) { if (b.dataset.codigo === '0' && !confirm('¿Cerrar el registro? Nadie más podrá pedir cuenta hasta que lo abras.')) return; await llamar('usuarios/codigo', { nuevo: b.dataset.codigo === '1' }, b.dataset.codigo === '1' ? 'Código nuevo listo. El anterior ya no vale.' : 'Registro cerrado.'); }
+      if (b.dataset.bloquear) { const u = D.usuarios.find(x => x.id === b.dataset.bloquear); await llamar('usuarios/bloquear', { id: u.id, bloqueado: u.estado !== 'bloqueado' }, u.estado === 'bloqueado' ? 'Desbloqueado.' : 'Bloqueado: ya no puede entrar.'); }
+      if (b.dataset.quitar) { const u = D.usuarios.find(x => x.id === b.dataset.quitar); if (confirm(`¿Borrar la cuenta de ${nomU(u)}? Sus inscripciones se quedan con su nombre.`)) await llamar('usuarios/borrar', { id: u.id }, 'Cuenta borrada.'); }
+      if (b.dataset.cambiar && f) {
+        const u = D.usuarios.find(x => x.id === b.dataset.cambiar); editando = u.id;
+        f.empleo.value = u.empleo || ''; f.nombre.value = u.nombre || ''; f.usuario.value = u.usuario; f.usuario.readOnly = true; f.correo.value = u.correo || ''; f.rol.value = u.rol; f.clave.value = '';
+        f.clave.placeholder = 'Vacía = no cambiarla';
+        $$('[name=club]', f).forEach(c => { c.checked = u.clubs.includes(c.value); }); verClubs();
+        $('.mb-usu-tit', f).textContent = `Cambiar la cuenta de ${nomU(u)}`; f.scrollIntoView({ behavior: 'smooth', block: 'start' }); f.nombre.focus();
+      }
+    });
+    if (f) f.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const cuerpo = { id: editando || undefined, usuario: f.usuario.value.trim().toLowerCase(), empleo: f.empleo.value.trim(), nombre: f.nombre.value.trim(), correo: f.correo.value.trim(), rol: f.rol.value, clave: f.clave.value, clubs: $$('[name=club]:checked', f).map(c => c.value) };
+      if (await llamar('usuarios', cuerpo, `Cuenta «${cuerpo.usuario}» guardada.${cuerpo.clave ? ' Pásale la contraseña en persona; podrá cambiarla en «Mi cuenta».' : ''}`)) {
+        if (editando === S.usuario.id) { try { const y = await api('yo'); S.usuario = y.usuario; repintar(true); } catch (e) { /* nada */ } }
+        limpiar();
+      }
+    });
+  }
+  /** Ajustes del servidor: dirección, correo y recordatorios. Y los roles (de momento solo se ven). */
+  async function panelAjustes() {
+    let D; try { D = await api('ajustes'); } catch (e) { U.toast(e.message, 'error'); return; }
+    const c = D.correo;
+    const m = modal(`<form class="mb-form-simple mb-ajustes" autocomplete="off"><h3>Ajustes del servidor</h3>
+      <label>Dirección de la página<input name="url" value="${esc(D.url)}" placeholder="${esc(D.urlDetectada || 'https://tudominio.es')}"><small class="mb-ayuda">Para los enlaces de los correos. Si la dejas vacía se usa ${esc(D.urlDetectada || 'la que se detecte')}.</small></label>
+      <h4>Correo</h4>
+      <label>Servicio de envío<select name="proveedor">
+        <option value="registro" ${c.proveedor === 'registro' ? 'selected' : ''}>Ninguno todavía (solo se apuntan en el registro del servidor)</option>
+        <option value="brevo" ${c.proveedor === 'brevo' ? 'selected' : ''}>Brevo</option>
+        <option value="resend" ${c.proveedor === 'resend' ? 'selected' : ''}>Resend</option></select></label>
+      <div class="mb-dos mb-aj-correo"><label>Remitente (de tu dominio)<input name="remitente" type="email" value="${esc(c.remitente)}" placeholder="avisos@tudominio.es"></label><label>Nombre que se ve<input name="nombre" value="${esc(c.nombre)}" placeholder="IIBPAC Moral y Bienestar"></label></div>
+      <label class="mb-aj-correo">Clave del servicio (API key)<input name="clave" type="password" autocomplete="new-password" placeholder="${c.clavePuesta ? 'Guardada. Escribe otra solo para cambiarla' : 'Pégala aquí'}"></label>
+      <p class="mb-sol-acc"><button class="btn suave peq" type="button" data-prueba>Enviarme un correo de prueba</button></p>
+      <h4>Recordatorios</h4>
+      <div class="mb-aj-rec"><label class="mb-check"><input type="checkbox" name="recordatorios" ${D.recordatorios ? 'checked' : ''}> Avisar el día anterior a quien esté apuntado o convocado</label><label class="mb-aj-hora">a partir de las <input type="time" name="hora" value="${esc(D.horaRecordatorio)}"></label></div>
+      <details class="mb-aj-roles"><summary>Tipos de cuenta y permisos</summary>
+        <p class="mb-ayuda">Cada tipo de cuenta es un grupo de permisos. El gestor para cambiarlos llegará en la siguiente fase; de momento se ven aquí.</p>
+        <table class="mb-usu-tabla"><thead><tr><th>Permiso</th>${Object.values(D.roles).map(r => `<th>${esc(r.nombre)}</th>`).join('')}</tr></thead><tbody>
+        ${D.permisos.map(p => `<tr><td>${esc(p.n)}<small>${esc(p.g)}</small></td>${Object.values(D.roles).map(r => `<td class="mb-aj-si">${r.permisos.includes(p.k) ? '✓' : ''}</td>`).join('')}</tr>`).join('')}</tbody></table></details>
+      <div class="mb-ed-pie"><span></span><button class="btn suave peq" type="button" data-cerrar>Cerrar</button><button class="btn oro" type="submit">Guardar</button></div></form>`, 'mb-modal-ajustes');
+    const f = $('form', m);
+    const verCorreo = () => $$('.mb-aj-correo', m).forEach(x => x.classList.toggle('oculto', f.proveedor.value === 'registro'));
+    verCorreo(); f.proveedor.addEventListener('change', verCorreo);
+    const datos = () => ({ url: f.url.value.trim(), recordatorios: f.recordatorios.checked, horaRecordatorio: f.hora.value || '18:00', correo: { proveedor: f.proveedor.value, remitente: f.remitente.value.trim(), nombre: f.nombre.value.trim(), clave: f.clave.value.trim() || undefined } });
     m.addEventListener('click', async ev => {
       const b = ev.target.closest('button'); if (!b) return;
       if (b.dataset.cerrar !== undefined) m.remove();
-      if (b.dataset.limpiar !== undefined) { f.reset(); f.usuario.readOnly = false; $('h4', f).firstChild.textContent = 'Nuevo usuario '; verClubs(); }
-      if (b.dataset.cambiar) {
-        const u = lista.find(x => x.usuario === b.dataset.cambiar); if (!u) return;
-        f.usuario.value = u.usuario; f.usuario.readOnly = true; f.nombre.value = u.nombre || ''; f.rol.value = u.rol; f.clave.value = '';
-        f.clave.placeholder = 'Déjala vacía para no cambiarla';
-        $$('[name=club]', f).forEach(c => { c.checked = u.clubs.includes(c.value); });
-        $('h4', f).firstChild.textContent = `Cambiar «${u.usuario}» `; verClubs(); f.nombre.focus();
-      }
-      if (b.dataset.quitar) {
-        if (!confirm(`¿Borrar el usuario «${b.dataset.quitar}»? Quien lo use dejará de poder entrar.`)) return;
-        try { lista = (await api('usuarios/borrar', { usuario: b.dataset.quitar })).usuarios; pintarLista(); U.toast('Usuario borrado.'); } catch (e) { U.toast(e.message, 'error'); }
+      if (b.dataset.prueba !== undefined) {
+        b.disabled = true;
+        try { await api('ajustes', datos()); const j = await api('ajustes/prueba', {}); U.toast(j.proveedor === 'registro' ? 'Guardado en el registro del servidor (aún no hay servicio de correo).' : `Enviado a ${S.usuario.correo}. Mira tu bandeja.`); }
+        catch (e) { U.toast(e.message, 'error'); }
+        b.disabled = false;
       }
     });
-    f.addEventListener('submit', async ev => {
-      ev.preventDefault();
-      const cuerpo = { usuario: f.usuario.value.trim().toLowerCase(), nombre: f.nombre.value.trim(), rol: f.rol.value, clave: f.clave.value, clubs: $$('[name=club]:checked', f).map(c => c.value) };
-      if (cuerpo.rol === 'editor' && !cuerpo.clubs.length) { U.toast('Marca al menos un club para el editor.', 'error'); return; }
-      try {
-        lista = (await api('usuarios', cuerpo)).usuarios; pintarLista();
-        U.toast(`Usuario «${cuerpo.usuario}» guardado.${cuerpo.clave ? ' Pásale la contraseña en persona.' : ''}`);
-        if (cuerpo.usuario === S.usuario.usuario) { S.usuario = Object.assign(S.usuario, { rol: cuerpo.rol, clubs: cuerpo.clubs, nombre: cuerpo.nombre }); repintar(true); }
-        f.reset(); f.usuario.readOnly = false; f.clave.placeholder = 'Mínimo 8 caracteres'; $('h4', f).firstChild.textContent = 'Nuevo usuario '; verClubs();
-      } catch (e) { U.toast(e.message, 'error'); }
-    });
+    f.addEventListener('submit', async ev => { ev.preventDefault(); try { await api('ajustes', datos()); m.remove(); U.toast('Ajustes guardados.'); } catch (e) { U.toast(e.message, 'error'); } });
   }
 
   /** Entrada desde el enrutador: ruta = '' (portada) o id de apartado. */
@@ -1306,7 +1498,7 @@
   function enlazarAcciones(raiz) {
     raiz.addEventListener('click', ev => {
       const b = ev.target.closest('[data-mb]'); if (!b) return;
-      const a = rutaActual ? apartado(rutaActual) : null;
+      const a = rutaActual && E.datos ? apartado(rutaActual) : null;
       switch (b.dataset.mb) {
         case 'abrir': abrir(); break;
         case 'reabrir': reabrir(); break;
@@ -1316,6 +1508,9 @@
         case 'permiso': escribir(true); break;
         case 'reintentar': if (enServidor()) { S.error = ''; enviarCambios(); } else escribir(true); break;
         case 'salir': salir(); break;
+        case 'cuenta': miCuenta(); break;
+        case 'pantalla': S.pantalla = b.dataset.p; S.aviso = ''; vista(rutaActual); break;
+        case 'reenviar': reenviarConfirmacion(b.dataset.u); break;
         case 'usuarios': panelUsuarios(); break;
         case 'recargar': S.fallo = ''; vista(rutaActual); break;
         case 'crear': editor(plantillaEvento({ inicio: E.mes === mesTxt(hoyTxt()) ? hoyTxt() : E.mes + '-01', fin: '', apartados: a && puedeAp(a) ? [a.id] : [] }), true); break;
@@ -1324,12 +1519,13 @@
         case 'pasadas': E.pasadas = !E.pasadas; pintarCalendario(raiz); break;
         case 'todos': E.ocultos.clear(); pintarCalendario(raiz); break;
         case 'ninguno': E.datos.apartados.forEach(x => E.ocultos.add(x.id)); E.ocultos.add('_sin'); pintarCalendario(raiz); break;
-        case 'nuevo-ap': if (!esMaestro()) break; ajustesAp({ id: nuevoId('a_'), nombre: '', grupo: 'Otros', icono: 'circulo', color: COLORES[E.datos.apartados.length % COLORES.length].k, foto: FOTOS[E.datos.apartados.length % FOTOS.length].k, resumen: '', notas: '', jefe: { empleo: '', nombre: '', contacto: '' } }, true); break;
+        case 'nuevo-ap': if (!tiene('moral.apartados')) break; ajustesAp({ id: nuevoId('a_'), nombre: '', grupo: 'Otros', icono: 'circulo', color: COLORES[E.datos.apartados.length % COLORES.length].k, foto: FOTOS[E.datos.apartados.length % FOTOS.length].k, resumen: '', notas: '', jefe: { empleo: '', nombre: '', contacto: '' } }, true); break;
         case 'jefe': if (a && puedeAp(a)) editarJefe(b, a); break;
         case 'ajustes-ap': if (a && puedeAp(a)) ajustesAp(a, false); break;
       }
     });
-    const login = $('#mb-login', raiz); if (login) login.addEventListener('submit', entrar);
+    const formAcc = { '#mb-login': entrar, '#mb-registro': registrarse, '#mb-olvide': olvide, '#mb-restablecer': restablecer };
+    for (const [sel, fn] of Object.entries(formAcc)) { const fo = $(sel, raiz); if (fo) fo.addEventListener('submit', fn); }
     const notas = $('#mb-ap-notas', raiz);
     if (notas) { let t; notas.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { const a = apartado(rutaActual); if (!a || !puedeAp(a)) return; a.notas = notas.value; a.mod = ahora(); cambio({ repintar: false }); }, 500); }); }
     // abrir sin escribir (navegadores sin acceso a archivos)
@@ -1340,7 +1536,7 @@
   /** Un .json soltado en la ventana. */
   async function soltarArchivo(file) {
     if (!U) return;
-    if (enServidor()) { if (esMaestro()) importarSrv(file); else U.toast('Aquí no hace falta abrir archivos: todo está en el servidor.'); return; }
+    if (enServidor()) { if (tiene('sistema.ajustes')) importarSrv(file); else U.toast('Aquí no hace falta abrir archivos: todo está en el servidor.'); return; }
     if (location.hash.indexOf('#/moral') !== 0) location.hash = '#/moral';
     // con Edge/Chrome, si el archivo soltado trae «manija», se puede escribir en él
     await abrirLectura(file);
