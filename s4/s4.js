@@ -616,7 +616,7 @@
     ['ITURRI', 'LANDTREK'], ['URO', 'VAMTAC ST5'], ['URO', 'VAMTAC S3'], ['IVECO', 'LMV LINCE'], ['SANTANA', 'ANÍBAL'],
     ['NISSAN', 'PATROL'], ['TOYOTA', 'LAND CRUISER'], ['MERCEDES-BENZ', 'CLASE G'], ['IVECO', 'M250'], ['IVECO', 'TRAKKER'], ['IVECO', 'DAILY'],
   ];
-  /** Campos del formulario PDF original. */
+  /** Campos del formulario PDF original. La compañía no va en su casilla (es diminuta): se escribe encima a 9 pt. */
   const CAMPOS_PDF = {
     marca: 'Cuadro de texto 1_12', modelo: 'Cuadro de texto 1_11', matricula: 'Cuadro de texto 1_4',
     conductor: 'Cuadro de texto 1_2', acompanante: 'Cuadro de texto 1', fecha: 'Cuadro de texto 1_9', motivo: 'Cuadro de texto 1_10',
@@ -625,63 +625,121 @@
   };
   const MESES_L = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   const fechaLarga = d => d ? `${d.getDate()} de ${MESES_L[d.getMonth()]} de ${d.getFullYear()}` : '';
-  const HR = { modelo: '0', marca: '', modeloTxt: '', matricula: '', conductor: '', acompanante: '', fecha: '', motivo: '', pi: '', pf: '', otros: '', fechaFirma: isoDe(new Date()), cia: leer(K_ULTIMA, ''), fdoCia: '', fdoS4: '' };
+  const vehVacio = () => ({ modelo: '0', otro: '', matricula: '', conductor: '', acompanante: '' });
+  const HR = Object.assign(vehVacio(), { fecha: '', motivo: '', pi: '', pf: '', otros: '', fechaFirma: isoDe(new Date()), cia: leer(K_ULTIMA, ''), fdoCia: '', fdoS4: '', convoy: [] });
   const nombrePersona = p => [p.empleo_abrev, p.apellidos, p.nombre].filter(Boolean).join(' ').trim() || p.apellidos_nombre;
   function modeloDeBase(texto) {
     const t = norm(texto); if (!t) return null;
     const i = MODELOS.findIndex(([ma, mo]) => t.includes(norm(mo)) || (norm(mo).includes(t) && t.length > 3) || t.includes(norm(ma) + ' ' + norm(mo)));
     return i >= 0 ? String(i) : null;
   }
-  function valoresHR() {
-    const otro = HR.modelo === 'otro'; const m = MODELOS[+HR.modelo] || ['', ''];
-    return {
-      marca: otro ? HR.marca : m[0], modelo: otro ? HR.modeloTxt : m[1], matricula: HR.matricula,
-      conductor: HR.conductor, acompanante: HR.acompanante, fecha: txtFecha(aFecha(HR.fecha)), motivo: HR.motivo,
-      pi: HR.pi, pf: HR.pf, otros: HR.otros, fechaFirma: fechaLarga(aFecha(HR.fechaFirma)), cia: HR.cia ? claveCia(HR.cia) : '', fdoCia: HR.fdoCia, fdoS4: HR.fdoS4,
-    };
+  /** [marca, modelo] de un vehículo. Con OTRO, la primera palabra es la marca y el resto el modelo. */
+  function marcaModelo(v) {
+    if (v.modelo !== 'otro') return MODELOS[+v.modelo] || ['', ''];
+    const t = v.otro.trim(); const i = t.indexOf(' ');
+    return i > 0 ? [t.slice(0, i), t.slice(i + 1).trim()] : [t, ''];
   }
+  const vehTexto = v => marcaModelo(v).filter(Boolean).join(' ');
+  const convoyLleno = () => HR.convoy;
+  const lineaConvoy = (v, n) => `${n}. ${vehTexto(v) || 'Vehículo'}${v.matricula ? ' · ' + v.matricula : ''}${v.conductor ? ' · Cond.: ' + v.conductor : ''}${v.acompanante ? ' · Acomp.: ' + v.acompanante : ''}`;
+  const limpioPdf = t => String(t || '').replace(/[^\n\x20-\x7E -ÿ€]/g, '');
   async function pdfHojaRuta() {
-    const { PDFDocument, StandardFonts } = PDFLib;
+    const { PDFDocument, StandardFonts, rgb } = PDFLib;
     const doc = await PDFDocument.load(b64(window.S4_PLANTILLA_HOJA_RUTA));
     const fuente = await doc.embedFont(StandardFonts.Helvetica);
-    const form = doc.getForm(); const v = valoresHR();
+    const negrita = await doc.embedFont(StandardFonts.HelveticaBold);
+    const form = doc.getForm();
+    const [marca, modelo] = marcaModelo(HR);
+    const convoy = convoyLleno();
+    // «Otros»: texto libre + vehículos del convoy. Si no cabe, el convoy va en una hoja aneja.
+    const anchoOtros = form.getTextField(CAMPOS_PDF.otros).acroField.getWidgets()[0].getRectangle().width - 4;
+    const altoDe = (texto, tam) => texto.split('\n').reduce((s, l) => s + Math.max(1, Math.ceil(fuente.widthOfTextAtSize(l, tam) / anchoOtros)), 0) * tam * 1.15;
+    const conConvoy = [HR.otros.trim(), convoy.length ? `CONVOY (${convoy.length + 1} vehículos). Además de este:` : '', ...convoy.map((v, i) => lineaConvoy(v, i + 2))].filter(Boolean).join('\n');
+    const anejo = convoy.length && altoDe(limpioPdf(conConvoy), 6.5) > 33;
+    const otros = anejo ? [HR.otros.trim(), `CONVOY DE ${convoy.length + 1} VEHÍCULOS: VER RELACIÓN EN HOJA ANEJA.`].filter(Boolean).join('\n') : conConvoy;
+    const v = {
+      marca, modelo, matricula: HR.matricula, conductor: HR.conductor, acompanante: HR.acompanante, fecha: txtFecha(aFecha(HR.fecha)), motivo: HR.motivo,
+      pi: HR.pi, pf: HR.pf, otros, fechaFirma: fechaLarga(aFecha(HR.fechaFirma)), cia: '', fdoCia: HR.fdoCia, fdoS4: HR.fdoS4,
+    };
     for (const [k, nombre] of Object.entries(CAMPOS_PDF)) {
       const f = form.getTextField(nombre);
-      const texto = String(v[k] || '').replace(/[^\n\x20-\x7E -ÿ€]/g, '');
+      const texto = limpioPdf(v[k]);
       f.setText(texto);
       const ancho = f.acroField.getWidgets()[0].getRectangle().width - 4;
       let tam = 9;
-      if (k === 'otros') { while (tam > 6 && texto.split('\n').reduce((s, l) => s + Math.max(1, Math.ceil(fuente.widthOfTextAtSize(l, tam) / ancho)), 0) * tam * 1.15 > 33) tam -= 0.5; }
+      if (k === 'otros') { while (tam > 6 && altoDe(texto, tam) > 33) tam -= 0.5; }
       else while (tam > 5 && fuente.widthOfTextAtSize(texto, tam) > ancho) tam -= 0.5;
       f.acroField.setDefaultAppearance(`/Helv ${tam} Tf 0 g`);
     }
+    // Compañía: a 9 pt como el resto, alineada a la derecha justo antes de «Cía.»
+    const rc = form.getTextField(CAMPOS_PDF.cia).acroField.getWidgets()[0].getRectangle();
     form.updateFieldAppearances(fuente);
     form.flatten();
+    const pag = doc.getPage(0);
+    const cia = limpioPdf(HR.cia ? claveCia(HR.cia) : '');
+    if (cia) pag.drawText(cia, { x: rc.x + rc.width - fuente.widthOfTextAtSize(cia, 9), y: rc.y + (rc.height - 9) / 2 + 2, size: 9, font: fuente, color: rgb(0, 0, 0) });
+    if (anejo) hojaConvoy(doc, fuente, negrita, rgb, convoy);
     doc.setTitle('Hoja de ruta'); doc.setCreator('IIBPAC'); doc.setProducer('IIBPAC');
     return new Blob([await doc.save()], { type: 'application/pdf' });
   }
-  const nombreHR = () => `HOJA_RUTA_${(aFecha(HR.fecha) ? isoDe(aFecha(HR.fecha)).replace(/-/g, '') : hoyTxt())}${HR.matricula ? '_' + HR.matricula.replace(/[^A-Za-z0-9]+/g, '') : ''}${HR.cia ? '_' + fichCia(HR.cia) : ''}.pdf`;
+  /** Hoja aneja con la relación de vehículos del convoy (A4, mismo estilo sobrio). */
+  function hojaConvoy(doc, fuente, negrita, rgb, convoy) {
+    const W = 595.3, Hh = 841.9, M = 56; const azul = rgb(0.18, 0.39, 0.66), gris = rgb(0.45, 0.45, 0.45), linea = rgb(0.7, 0.7, 0.7);
+    const filas = [HR, ...convoy];
+    const cols = [{ et: 'Nº', w: 24 }, { et: 'VEHÍCULO', w: 120 }, { et: 'MATRÍCULA', w: 78 }, { et: 'CONDUCTOR', w: 130 }, { et: 'ACOMPAÑANTE', w: 131 }];
+    let pag, y;
+    const uso = p => { for (const yy of [Hh - 46, 22]) { const t = 'USO OFICIAL'; const tw = negrita.widthOfTextAtSize(t, 13); p.drawRectangle({ x: (W - tw) / 2 - 10, y: yy - 6, width: tw + 20, height: 24, borderColor: azul, borderWidth: 2 }); p.drawText(t, { x: (W - tw) / 2, y: yy + 1, size: 13, font: negrita, color: azul }); } };
+    const cabecera = () => {
+      pag = doc.addPage([W, Hh]); uso(pag); y = Hh - 100;
+      const t = 'HOJA DE RUTA · RELACIÓN DE VEHÍCULOS DEL CONVOY';
+      pag.drawText(t, { x: (W - negrita.widthOfTextAtSize(t, 13)) / 2, y, size: 13, font: negrita }); y -= 24;
+      const datos = [['Fecha', txtFecha(aFecha(HR.fecha))], ['Motivo', HR.motivo], ['PI', HR.pi], ['PF', HR.pf], ['Compañía', HR.cia ? etCia(HR.cia) : '']].filter(d => d[1]);
+      let x = M; for (const [k, val] of datos) { const a = `${k}: `; pag.drawText(a, { x, y, size: 9, font: negrita }); x += negrita.widthOfTextAtSize(a, 9); const b = limpioPdf(val); pag.drawText(b, { x, y, size: 9, font: fuente }); x += fuente.widthOfTextAtSize(b, 9) + 16; }
+      y -= 20; let cx = M;
+      pag.drawRectangle({ x: M, y: y - 5, width: W - 2 * M, height: 18, color: rgb(0.92, 0.92, 0.92) });
+      for (const c of cols) { pag.drawText(c.et, { x: cx + 4, y, size: 8, font: negrita }); cx += c.w; }
+      y -= 18;
+    };
+    const corta = (t, w, size) => { t = limpioPdf(t); while (t && fuente.widthOfTextAtSize(t, size) > w - 8) t = t.slice(0, -1); return t; };
+    cabecera();
+    filas.forEach((v, i) => {
+      if (y < 90) cabecera();
+      const val = [String(i + 1), vehTexto(v), v.matricula, v.conductor, v.acompanante];
+      let cx = M; cols.forEach((c, j) => { pag.drawText(corta(val[j] || '', c.w, 8.5), { x: cx + 4, y, size: 8.5, font: j === 0 ? negrita : fuente }); cx += c.w; });
+      pag.drawLine({ start: { x: M, y: y - 6 }, end: { x: W - M, y: y - 6 }, thickness: 0.5, color: linea });
+      y -= 20;
+    });
+    y -= 6; pag.drawText(`Total: ${filas.length} vehículos.`, { x: M, y, size: 9, font: fuente, color: gris });
+  }
+  const nombreHR = () => `HOJA_RUTA_${(aFecha(HR.fecha) ? isoDe(aFecha(HR.fecha)).replace(/-/g, '') : hoyTxt())}${HR.matricula ? '_' + HR.matricula.replace(/[^A-Za-z0-9]+/g, '') : ''}${HR.convoy.length ? '_CONVOY' : ''}${HR.cia ? '_' + fichCia(HR.cia) : ''}.pdf`;
   function vistaHojaRuta() {
     const cias = companias();
     if (HR.cia && !cias.some(c => c.k === claveCia(HR.cia))) cias.push({ k: claveCia(HR.cia), et: etCia(HR.cia) });
     const hayPersonal = (H.personas && H.personas().length) || 0;
-    const persona = (id, et, ayuda) => `<label class="campo"><span class="etq">${et}</span><input type="text" id="${id}" list="${id}-lista" value="${esc(HR[id.slice(3)])}" placeholder="${hayPersonal ? 'Escribe dos letras del apellido…' : 'Empleo, apellidos y nombre'}" autocomplete="off" maxlength="80"><datalist id="${id}-lista"></datalist>${ayuda ? `<span class="ayuda">${ayuda}</span>` : ''}</label>`;
+    const ph = hayPersonal ? 'Escribe dos letras del apellido…' : 'Empleo, apellidos y nombre';
+    const persona = (id, et, valor, attrs = '') => `<label class="campo medio"><span class="etq">${et}</span><input type="text" id="${id}" ${attrs} list="${id}-lista" value="${esc(valor)}" placeholder="${ph}" autocomplete="off" maxlength="80"><datalist id="${id}-lista"></datalist></label>`;
+    const selModelo = (id, v, attrs = '') => `<select id="${id}" ${attrs}>${MODELOS.map(([ma, mo], i) => `<option value="${i}"${String(i) === v.modelo ? ' selected' : ''}>${esc(ma)} ${esc(mo)}</option>`).join('')}<option value="otro"${v.modelo === 'otro' ? ' selected' : ''}>OTRO (escribir)</option></select>`;
+    const listaMats = B.vehiculos.length ? `<datalist id="hr-mats">${B.vehiculos.map(v => `<option value="${esc(v.matricula)}">${esc([v.modelo, etCia(v.cia)].filter(Boolean).join(' · '))}</option>`).join('')}</datalist>` : '';
+    const bloqueVeh = (pre, v, i) => {
+      const d = i == null ? '' : `data-cv="${i}" `;
+      const k = (x) => i == null ? `hr-${x}` : `cv${i}-${x}`;
+      return `<label class="campo medio"><span class="etq">Tipo de vehículo</span>${selModelo(k('modelo'), v, d + 'data-k="modelo"')}
+          <input type="text" class="s4-hr-otro" id="${k('otro')}" ${d}data-k="otro" value="${esc(v.otro)}" placeholder="Escribe marca y modelo (p. ej. MAN HX 4x4)" maxlength="40"${v.modelo === 'otro' ? '' : ' hidden'}></label>
+        <label class="campo medio"><span class="etq">Matrícula</span><input type="text" id="${k('matricula')}" ${d}data-k="matricula" list="hr-mats" value="${esc(v.matricula)}" placeholder="${B.vehiculos.length ? 'Escribe la matrícula…' : 'ET 123456'}" maxlength="20"></label>
+        ${persona(k('conductor'), 'Conductor', v.conductor, d + 'data-k="conductor"')}
+        ${persona(k('acompanante'), 'Acompañante', v.acompanante, d + 'data-k="acompanante"')}`;
+    };
+    const htmlConvoy = () => HR.convoy.map((v, i) => `<div class="s4-cv"><div class="s4-cv-cab"><span>Vehículo ${i + 2}</span><button type="button" class="s4-quitar" data-s4="cv-quitar" data-i="${i}" title="Quitar vehículo" aria-label="Quitar vehículo">×</button></div><div class="s4-fechas">${bloqueVeh('cv', v, i)}</div></div>`).join('');
     const raiz = H.pintar(`${H.banda('<a href="#/">Inicio</a> / <a href="#/s4">S4</a> / <span>Hoja de ruta</span>', 'Hoja de <i>ruta</i>', 'Vehículo, conductor y movimiento. Sale en PDF con el formato de siempre, lista para imprimir.', 'foto-sierra')}
     <section class="pagina"><div class="contenedor s4 s4-hr">
       <div class="s4-hr-form">
         <div id="s4-base">${htmlBase()}</div>
-        ${hayPersonal ? '' : `<div class="s4-base"><div><strong>Base de personal</strong><span>Sin cargar: conductor y firmas se escriben a mano. Cárgala con «Cargar Excel» arriba y podrás buscarlos por apellido.</span></div></div>`}
+        ${hayPersonal ? '' : `<div class="s4-base"><div><strong>Base de personal</strong><span>Sin cargar: conductores y firmas se escriben a mano. Cárgala con «Cargar Excel» arriba y podrás buscarlos por apellido.</span></div></div>`}
+        ${listaMats}
         <form id="hr-form" autocomplete="off" novalidate>
           <div class="s4-paso"><span class="s4-num">1</span><div class="s4-paso-cuerpo"><h2>Datos del vehículo</h2>
-            <div class="s4-fechas">
-              <label class="campo"><span class="etq">Matrícula</span><input type="text" id="hr-matricula" list="hr-matricula-lista" value="${esc(HR.matricula)}" placeholder="${B.vehiculos.length ? 'Escribe la matrícula o el modelo…' : 'ET 123456'}" maxlength="20"><datalist id="hr-matricula-lista">${B.vehiculos.map(v => `<option value="${esc(v.matricula)}">${esc([v.modelo, etCia(v.cia)].filter(Boolean).join(' · '))}</option>`).join('')}</datalist>
-                ${B.vehiculos.length ? '<span class="ayuda">Si está en la base de vehículos, la marca y el modelo se ponen solos.</span>' : ''}</label>
-              <label class="campo"><span class="etq">Tipo de vehículo</span><select id="hr-modelo">${MODELOS.map(([ma, mo], i) => `<option value="${i}"${String(i) === HR.modelo ? ' selected' : ''}>${esc(ma)} ${esc(mo)}</option>`).join('')}<option value="otro"${HR.modelo === 'otro' ? ' selected' : ''}>OTRO (escribir)</option></select></label>
-              <label class="campo medio" data-otro${HR.modelo === 'otro' ? '' : ' hidden'}><span class="etq">Marca</span><input type="text" id="hr-marca" value="${esc(HR.marca)}" maxlength="24"></label>
-              <label class="campo medio" data-otro${HR.modelo === 'otro' ? '' : ' hidden'}><span class="etq">Modelo</span><input type="text" id="hr-modeloTxt" value="${esc(HR.modeloTxt)}" maxlength="24"></label>
-              ${persona('hr-conductor', 'Conductor')}
-              ${persona('hr-acompanante', 'Acompañante')}
-            </div></div></div>
+            <div class="s4-fechas">${bloqueVeh('hr', HR)}</div>
+            ${B.vehiculos.length ? '<p class="s4-ayuda">Si la matrícula está en la base de vehículos, el tipo se pone solo.</p>' : ''}</div></div>
           <div class="s4-paso"><span class="s4-num">2</span><div class="s4-paso-cuerpo"><h2>Datos del movimiento</h2>
             <div class="s4-fechas">
               <label class="campo medio"><span class="etq">Fecha</span><input type="date" id="hr-fecha" value="${esc(HR.fecha)}"></label>
@@ -689,13 +747,17 @@
               <label class="campo medio"><span class="etq">PI · punto inicial</span><input type="text" id="hr-pi" value="${esc(HR.pi)}" maxlength="30" placeholder="Ej.: BP"></label>
               <label class="campo medio"><span class="etq">PF · punto final</span><input type="text" id="hr-pf" value="${esc(HR.pf)}" maxlength="30" placeholder="Ej.: CMT S.G"></label>
               <label class="campo"><span class="etq">Otros</span><textarea id="hr-otros" rows="3" maxlength="400">${esc(HR.otros)}</textarea></label>
-            </div><p class="s4-ayuda">Horas, kilómetros y observaciones se quedan en blanco: los rellena el conductor a mano.</p></div></div>
+            </div>
+            <div class="s4-convoy"><div class="s4-convoy-cab"><strong>Convoy</strong><span>Si van más vehículos, añádelos aquí. Salen en «Otros»; si no caben, en una hoja aneja con la relación completa.</span></div>
+              <div id="hr-convoy">${htmlConvoy()}</div>
+              <button class="btn suave peq" type="button" data-s4="cv-anadir">+ Añadir vehículo al convoy</button></div>
+            <p class="s4-ayuda">Horas, kilómetros y observaciones se quedan en blanco: los rellena el conductor a mano.</p></div></div>
           <div class="s4-paso"><span class="s4-num">3</span><div class="s4-paso-cuerpo"><h2>Firma</h2>
             <div class="s4-fechas">
               <label class="campo medio"><span class="etq">Fecha de la firma</span><input type="date" id="hr-fechaFirma" value="${esc(HR.fechaFirma)}"></label>
               <label class="campo medio"><span class="etq">Compañía</span><select id="hr-cia"><option value="">—</option>${cias.map(c => `<option value="${esc(c.k)}"${HR.cia && c.k === claveCia(HR.cia) ? ' selected' : ''}>${esc(c.et)}</option>`).join('')}</select></label>
-              ${persona('hr-fdoCia', 'Firma de la compañía (Fdo.)')}
-              ${persona('hr-fdoS4', 'El auxiliar S-4 (Fdo.)')}
+              ${persona('hr-fdoCia', 'Firma de la compañía (Fdo.)', HR.fdoCia)}
+              ${persona('hr-fdoS4', 'El auxiliar S-4 (Fdo.)', HR.fdoS4)}
             </div></div></div>
           <div class="s4-pie"><span class="s4-nombre" id="hr-nombre"></span><button class="btn suave" type="button" data-s4="hr-imprimir">Imprimir</button><button class="btn oro" type="submit">Descargar PDF</button></div>
         </form>
@@ -714,29 +776,39 @@
       const res = Comun.buscarPersonas(H.personas(), q, 8);
       dl.innerHTML = res.map(p => `<option value="${esc(nombrePersona(p))}">${esc([p.cia ? etCia(p.cia) : '', p.dni].filter(Boolean).join(' · '))}</option>`).join('');
     };
-    raiz.addEventListener('input', e => {
-      const id = (e.target.id || '').replace(/^hr-/, ''); if (!(id in HR)) return;
-      HR[id] = e.target.value;
-      if (e.target.list && id !== 'matricula') sugerir(e.target);
-      if (id === 'matricula') {
-        const v = B.vehiculos.find(x => norm(x.matricula) === norm(e.target.value));
-        if (v) {
-          const i = modeloDeBase(v.modelo) || modeloDeBase(v.grupo);
-          if (i) HR.modelo = i; else { HR.modelo = 'otro'; HR.marca = ''; HR.modeloTxt = v.modelo || v.grupo || ''; $('#hr-marca').value = HR.marca; $('#hr-modeloTxt').value = HR.modeloTxt; }
-          $('#hr-modelo').value = HR.modelo; $$('[data-otro]').forEach(x => { x.hidden = HR.modelo !== 'otro'; });
-          if (v.cia && !HR.cia) { HR.cia = claveCia(v.cia); $('#hr-cia').value = HR.cia; }
-        }
-      }
-      if (id === 'modelo') $$('[data-otro]').forEach(x => { x.hidden = HR.modelo !== 'otro'; });
-      previa();
-    });
-    raiz.addEventListener('change', e => { if (e.target.id === 'hr-cia' || e.target.id === 'hr-modelo') { HR[e.target.id.slice(3)] = e.target.value; $$('[data-otro]').forEach(x => { x.hidden = HR.modelo !== 'otro'; }); previa(); } });
+    const repintarConvoy = () => { $('#hr-convoy').innerHTML = htmlConvoy(); };
+    /** Pone el tipo según la matrícula de la base. */
+    const desdeBase = (veh, cont) => {
+      const v = B.vehiculos.find(x => norm(x.matricula) === norm(veh.matricula)); if (!v) return;
+      const i = modeloDeBase(v.modelo) || modeloDeBase(v.grupo);
+      if (i) veh.modelo = i; else { veh.modelo = 'otro'; veh.otro = v.modelo || v.grupo || ''; }
+      const sel = cont.querySelector('[data-k="modelo"]'), otro = cont.querySelector('[data-k="otro"]');
+      sel.value = veh.modelo; otro.value = veh.otro; otro.hidden = veh.modelo !== 'otro';
+      if (veh === HR && v.cia && !HR.cia) { HR.cia = claveCia(v.cia); $('#hr-cia').value = HR.cia; }
+    };
+    const campo = e => {
+      const el = e.target; const k = el.dataset.k;
+      const veh = el.dataset.cv != null ? HR.convoy[+el.dataset.cv] : HR;
+      const clave = k || (el.id || '').replace(/^hr-/, '');
+      if (!(clave in veh)) return false;
+      veh[clave] = el.value;
+      const cont = el.closest('.s4-fechas');
+      if (clave === 'modelo') { const o = cont.querySelector('[data-k="otro"]'); o.hidden = veh.modelo !== 'otro'; if (!o.hidden && e.type === 'change') o.focus(); }
+      if (clave === 'matricula') desdeBase(veh, cont);
+      if ((clave === 'conductor' || clave === 'acompanante' || clave === 'fdoCia' || clave === 'fdoS4') && e.type === 'input') sugerir(el);
+      return true;
+    };
+    raiz.addEventListener('input', e => { if (campo(e)) previa(); });
+    raiz.addEventListener('change', e => { if (campo(e)) previa(); });
     raiz.addEventListener('click', async e => {
       const b = e.target.closest('[data-s4]'); if (!b) return;
-      if (b.dataset.s4 === 'cargar-base') pedirBase();
-      else if (b.dataset.s4 === 'olvidar-base') { olvidarBase(); vistaHojaRuta(); H.toast('Base de vehículos borrada de la memoria.'); }
-      else if (b.dataset.s4 === 'clasificar') revisarTipos();
-      else if (b.dataset.s4 === 'hr-imprimir') { b.disabled = true; try { H.imprimirPdf(await pdfHojaRuta()); } catch (err) { console.error(err); H.toast('No se pudo preparar la impresión.', 'error'); } b.disabled = false; }
+      const acc = b.dataset.s4;
+      if (acc === 'cargar-base') pedirBase();
+      else if (acc === 'olvidar-base') { olvidarBase(); vistaHojaRuta(); H.toast('Base de vehículos borrada de la memoria.'); }
+      else if (acc === 'clasificar') revisarTipos();
+      else if (acc === 'cv-anadir') { HR.convoy.push(vehVacio()); repintarConvoy(); const m = $(`#cv${HR.convoy.length - 1}-matricula`); if (m) m.focus(); previa(); }
+      else if (acc === 'cv-quitar') { HR.convoy.splice(+b.dataset.i, 1); repintarConvoy(); previa(); }
+      else if (acc === 'hr-imprimir') { b.disabled = true; try { H.imprimirPdf(await pdfHojaRuta()); } catch (err) { console.error(err); H.toast('No se pudo preparar la impresión.', 'error'); } b.disabled = false; }
     });
     $('#hr-form').addEventListener('submit', async e => {
       e.preventDefault(); const btn = e.submitter || $('#hr-form .btn.oro'); btn.disabled = true;
