@@ -116,3 +116,16 @@
   .s4-mod { grid-template-columns: 1fr 140px; }
   .s4-mod em { display: none; }
 }
+
+/* Hoja de ruta: formulario + vista previa al lado */
+.s4.s4-hr { max-width: 1240px; display: grid; grid-template-columns: minmax(0, 1fr) 470px; gap: 22px; align-items: start; }
+.s4-hr-vista { position: sticky; top: calc(var(--barra) + 16px); background: var(--superficie); border: 1px solid var(--linea); border-radius: 8px; overflow: hidden; }
+.s4-hr-vista-cab { padding: 10px 14px; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--gris); border-bottom: 1px solid var(--linea); }
+.s4-hr-vista iframe { display: block; width: 100%; height: calc(100vh - var(--barra) - 90px); min-height: 520px; border: 0; background: #E9E6E0; }
+.s4-hr .s4-pie .btn.suave { margin-left: auto; }
+.s4-hr .s4-pie .s4-nombre { flex: 1 1 100%; text-align: right; }
+@media (max-width: 1050px) {
+  .s4.s4-hr { grid-template-columns: 1fr; }
+  .s4-hr-vista { position: static; }
+  .s4-hr-vista iframe { height: 80vh; }
+}

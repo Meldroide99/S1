@@ -433,8 +433,9 @@
     try {
       const n = await cargarBase(file);
       H.toast(`${n} vehículos cargados de «${file.name}». Solo en este ordenador.`);
-      if ($('#s4-base')) { $('#s4-base').innerHTML = htmlBase(); }
-      if ($('#s4-cia')) vistaSolicitud();
+      if (/^#\/s4\/hoja-ruta/.test(location.hash)) vistaHojaRuta();
+      else if ($('#s4-cia')) vistaSolicitud();
+      else if ($('#s4-base')) $('#s4-base').innerHTML = htmlBase();
     } catch (e) { console.error(e); H.toast(e.message || 'No se pudo leer el archivo.', 'error'); }
   }
 
@@ -610,8 +611,144 @@
     btn.disabled = false;
   }
 
+  // ======================================================================= hoja de ruta (PDF)
+  const MODELOS = [
+    ['ITURRI', 'LANDTREK'], ['URO', 'VAMTAC ST5'], ['URO', 'VAMTAC S3'], ['IVECO', 'LMV LINCE'], ['SANTANA', 'ANÍBAL'],
+    ['NISSAN', 'PATROL'], ['TOYOTA', 'LAND CRUISER'], ['MERCEDES-BENZ', 'CLASE G'], ['IVECO', 'M250'], ['IVECO', 'TRAKKER'], ['IVECO', 'DAILY'],
+  ];
+  /** Campos del formulario PDF original. */
+  const CAMPOS_PDF = {
+    marca: 'Cuadro de texto 1_12', modelo: 'Cuadro de texto 1_11', matricula: 'Cuadro de texto 1_4',
+    conductor: 'Cuadro de texto 1_2', acompanante: 'Cuadro de texto 1', fecha: 'Cuadro de texto 1_9', motivo: 'Cuadro de texto 1_10',
+    pi: 'Cuadro de texto 1_7', pf: 'Cuadro de texto 1_8', otros: 'Cuadro de texto 1_5', fechaFirma: 'Cuadro de texto 1_3',
+    cia: 'Cuadro de texto 1_13', fdoCia: 'Cuadro de texto 1_6', fdoS4: 'Cuadro de texto 1_14',
+  };
+  const MESES_L = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const fechaLarga = d => d ? `${d.getDate()} de ${MESES_L[d.getMonth()]} de ${d.getFullYear()}` : '';
+  const HR = { modelo: '0', marca: '', modeloTxt: '', matricula: '', conductor: '', acompanante: '', fecha: '', motivo: '', pi: '', pf: '', otros: '', fechaFirma: isoDe(new Date()), cia: leer(K_ULTIMA, ''), fdoCia: '', fdoS4: '' };
+  const nombrePersona = p => [p.empleo_abrev, p.apellidos, p.nombre].filter(Boolean).join(' ').trim() || p.apellidos_nombre;
+  function modeloDeBase(texto) {
+    const t = norm(texto); if (!t) return null;
+    const i = MODELOS.findIndex(([ma, mo]) => t.includes(norm(mo)) || (norm(mo).includes(t) && t.length > 3) || t.includes(norm(ma) + ' ' + norm(mo)));
+    return i >= 0 ? String(i) : null;
+  }
+  function valoresHR() {
+    const otro = HR.modelo === 'otro'; const m = MODELOS[+HR.modelo] || ['', ''];
+    return {
+      marca: otro ? HR.marca : m[0], modelo: otro ? HR.modeloTxt : m[1], matricula: HR.matricula,
+      conductor: HR.conductor, acompanante: HR.acompanante, fecha: txtFecha(aFecha(HR.fecha)), motivo: HR.motivo,
+      pi: HR.pi, pf: HR.pf, otros: HR.otros, fechaFirma: fechaLarga(aFecha(HR.fechaFirma)), cia: HR.cia ? claveCia(HR.cia) : '', fdoCia: HR.fdoCia, fdoS4: HR.fdoS4,
+    };
+  }
+  async function pdfHojaRuta() {
+    const { PDFDocument, StandardFonts } = PDFLib;
+    const doc = await PDFDocument.load(b64(window.S4_PLANTILLA_HOJA_RUTA));
+    const fuente = await doc.embedFont(StandardFonts.Helvetica);
+    const form = doc.getForm(); const v = valoresHR();
+    for (const [k, nombre] of Object.entries(CAMPOS_PDF)) {
+      const f = form.getTextField(nombre);
+      const texto = String(v[k] || '').replace(/[^\n\x20-\x7E -ÿ€]/g, '');
+      f.setText(texto);
+      const ancho = f.acroField.getWidgets()[0].getRectangle().width - 4;
+      let tam = 9;
+      if (k === 'otros') { while (tam > 6 && texto.split('\n').reduce((s, l) => s + Math.max(1, Math.ceil(fuente.widthOfTextAtSize(l, tam) / ancho)), 0) * tam * 1.15 > 33) tam -= 0.5; }
+      else while (tam > 5 && fuente.widthOfTextAtSize(texto, tam) > ancho) tam -= 0.5;
+      f.acroField.setDefaultAppearance(`/Helv ${tam} Tf 0 g`);
+    }
+    form.updateFieldAppearances(fuente);
+    form.flatten();
+    doc.setTitle('Hoja de ruta'); doc.setCreator('IIBPAC'); doc.setProducer('IIBPAC');
+    return new Blob([await doc.save()], { type: 'application/pdf' });
+  }
+  const nombreHR = () => `HOJA_RUTA_${(aFecha(HR.fecha) ? isoDe(aFecha(HR.fecha)).replace(/-/g, '') : hoyTxt())}${HR.matricula ? '_' + HR.matricula.replace(/[^A-Za-z0-9]+/g, '') : ''}${HR.cia ? '_' + fichCia(HR.cia) : ''}.pdf`;
+  function vistaHojaRuta() {
+    const cias = companias();
+    if (HR.cia && !cias.some(c => c.k === claveCia(HR.cia))) cias.push({ k: claveCia(HR.cia), et: etCia(HR.cia) });
+    const hayPersonal = (H.personas && H.personas().length) || 0;
+    const persona = (id, et, ayuda) => `<label class="campo"><span class="etq">${et}</span><input type="text" id="${id}" list="${id}-lista" value="${esc(HR[id.slice(3)])}" placeholder="${hayPersonal ? 'Escribe dos letras del apellido…' : 'Empleo, apellidos y nombre'}" autocomplete="off" maxlength="80"><datalist id="${id}-lista"></datalist>${ayuda ? `<span class="ayuda">${ayuda}</span>` : ''}</label>`;
+    const raiz = H.pintar(`${H.banda('<a href="#/">Inicio</a> / <a href="#/s4">S4</a> / <span>Hoja de ruta</span>', 'Hoja de <i>ruta</i>', 'Vehículo, conductor y movimiento. Sale en PDF con el formato de siempre, lista para imprimir.', 'foto-sierra')}
+    <section class="pagina"><div class="contenedor s4 s4-hr">
+      <div class="s4-hr-form">
+        <div id="s4-base">${htmlBase()}</div>
+        ${hayPersonal ? '' : `<div class="s4-base"><div><strong>Base de personal</strong><span>Sin cargar: conductor y firmas se escriben a mano. Cárgala con «Cargar Excel» arriba y podrás buscarlos por apellido.</span></div></div>`}
+        <form id="hr-form" autocomplete="off" novalidate>
+          <div class="s4-paso"><span class="s4-num">1</span><div class="s4-paso-cuerpo"><h2>Datos del vehículo</h2>
+            <div class="s4-fechas">
+              <label class="campo"><span class="etq">Matrícula</span><input type="text" id="hr-matricula" list="hr-matricula-lista" value="${esc(HR.matricula)}" placeholder="${B.vehiculos.length ? 'Escribe la matrícula o el modelo…' : 'ET 123456'}" maxlength="20"><datalist id="hr-matricula-lista">${B.vehiculos.map(v => `<option value="${esc(v.matricula)}">${esc([v.modelo, etCia(v.cia)].filter(Boolean).join(' · '))}</option>`).join('')}</datalist>
+                ${B.vehiculos.length ? '<span class="ayuda">Si está en la base de vehículos, la marca y el modelo se ponen solos.</span>' : ''}</label>
+              <label class="campo"><span class="etq">Tipo de vehículo</span><select id="hr-modelo">${MODELOS.map(([ma, mo], i) => `<option value="${i}"${String(i) === HR.modelo ? ' selected' : ''}>${esc(ma)} ${esc(mo)}</option>`).join('')}<option value="otro"${HR.modelo === 'otro' ? ' selected' : ''}>OTRO (escribir)</option></select></label>
+              <label class="campo medio" data-otro${HR.modelo === 'otro' ? '' : ' hidden'}><span class="etq">Marca</span><input type="text" id="hr-marca" value="${esc(HR.marca)}" maxlength="24"></label>
+              <label class="campo medio" data-otro${HR.modelo === 'otro' ? '' : ' hidden'}><span class="etq">Modelo</span><input type="text" id="hr-modeloTxt" value="${esc(HR.modeloTxt)}" maxlength="24"></label>
+              ${persona('hr-conductor', 'Conductor')}
+              ${persona('hr-acompanante', 'Acompañante')}
+            </div></div></div>
+          <div class="s4-paso"><span class="s4-num">2</span><div class="s4-paso-cuerpo"><h2>Datos del movimiento</h2>
+            <div class="s4-fechas">
+              <label class="campo medio"><span class="etq">Fecha</span><input type="date" id="hr-fecha" value="${esc(HR.fecha)}"></label>
+              <label class="campo medio"><span class="etq">Motivo</span><input type="text" id="hr-motivo" value="${esc(HR.motivo)}" maxlength="50" placeholder="Ej.: JJAA"></label>
+              <label class="campo medio"><span class="etq">PI · punto inicial</span><input type="text" id="hr-pi" value="${esc(HR.pi)}" maxlength="30" placeholder="Ej.: BP"></label>
+              <label class="campo medio"><span class="etq">PF · punto final</span><input type="text" id="hr-pf" value="${esc(HR.pf)}" maxlength="30" placeholder="Ej.: CMT S.G"></label>
+              <label class="campo"><span class="etq">Otros</span><textarea id="hr-otros" rows="3" maxlength="400">${esc(HR.otros)}</textarea></label>
+            </div><p class="s4-ayuda">Horas, kilómetros y observaciones se quedan en blanco: los rellena el conductor a mano.</p></div></div>
+          <div class="s4-paso"><span class="s4-num">3</span><div class="s4-paso-cuerpo"><h2>Firma</h2>
+            <div class="s4-fechas">
+              <label class="campo medio"><span class="etq">Fecha de la firma</span><input type="date" id="hr-fechaFirma" value="${esc(HR.fechaFirma)}"></label>
+              <label class="campo medio"><span class="etq">Compañía</span><select id="hr-cia"><option value="">—</option>${cias.map(c => `<option value="${esc(c.k)}"${HR.cia && c.k === claveCia(HR.cia) ? ' selected' : ''}>${esc(c.et)}</option>`).join('')}</select></label>
+              ${persona('hr-fdoCia', 'Firma de la compañía (Fdo.)')}
+              ${persona('hr-fdoS4', 'El auxiliar S-4 (Fdo.)')}
+            </div></div></div>
+          <div class="s4-pie"><span class="s4-nombre" id="hr-nombre"></span><button class="btn suave" type="button" data-s4="hr-imprimir">Imprimir</button><button class="btn oro" type="submit">Descargar PDF</button></div>
+        </form>
+      </div>
+      <aside class="s4-hr-vista"><div class="s4-hr-vista-cab"><span>Vista previa</span></div><iframe id="hr-vista" title="Vista previa de la hoja de ruta"></iframe></aside>
+    </div></section>`);
+    H.animarEntrada && H.animarEntrada(raiz);
+    let url = null, t = null;
+    const previa = () => { clearTimeout(t); t = setTimeout(async () => {
+      try { const blob = await pdfHojaRuta(); if (url) URL.revokeObjectURL(url); url = URL.createObjectURL(blob); const f = $('#hr-vista'); if (f) f.src = url + '#toolbar=0&navpanes=0&view=FitH'; } catch (e) { console.error(e); }
+      const n = $('#hr-nombre'); if (n) n.textContent = nombreHR();
+    }, 450); };
+    const sugerir = inp => {
+      const dl = $('#' + inp.id + '-lista'); if (!dl || !H.personas) return;
+      const q = inp.value.trim(); if (q.length < 2) { dl.innerHTML = ''; return; }
+      const res = Comun.buscarPersonas(H.personas(), q, 8);
+      dl.innerHTML = res.map(p => `<option value="${esc(nombrePersona(p))}">${esc([p.cia ? etCia(p.cia) : '', p.dni].filter(Boolean).join(' · '))}</option>`).join('');
+    };
+    raiz.addEventListener('input', e => {
+      const id = (e.target.id || '').replace(/^hr-/, ''); if (!(id in HR)) return;
+      HR[id] = e.target.value;
+      if (e.target.list && id !== 'matricula') sugerir(e.target);
+      if (id === 'matricula') {
+        const v = B.vehiculos.find(x => norm(x.matricula) === norm(e.target.value));
+        if (v) {
+          const i = modeloDeBase(v.modelo) || modeloDeBase(v.grupo);
+          if (i) HR.modelo = i; else { HR.modelo = 'otro'; HR.marca = ''; HR.modeloTxt = v.modelo || v.grupo || ''; $('#hr-marca').value = HR.marca; $('#hr-modeloTxt').value = HR.modeloTxt; }
+          $('#hr-modelo').value = HR.modelo; $$('[data-otro]').forEach(x => { x.hidden = HR.modelo !== 'otro'; });
+          if (v.cia && !HR.cia) { HR.cia = claveCia(v.cia); $('#hr-cia').value = HR.cia; }
+        }
+      }
+      if (id === 'modelo') $$('[data-otro]').forEach(x => { x.hidden = HR.modelo !== 'otro'; });
+      previa();
+    });
+    raiz.addEventListener('change', e => { if (e.target.id === 'hr-cia' || e.target.id === 'hr-modelo') { HR[e.target.id.slice(3)] = e.target.value; $$('[data-otro]').forEach(x => { x.hidden = HR.modelo !== 'otro'; }); previa(); } });
+    raiz.addEventListener('click', async e => {
+      const b = e.target.closest('[data-s4]'); if (!b) return;
+      if (b.dataset.s4 === 'cargar-base') pedirBase();
+      else if (b.dataset.s4 === 'olvidar-base') { olvidarBase(); vistaHojaRuta(); H.toast('Base de vehículos borrada de la memoria.'); }
+      else if (b.dataset.s4 === 'clasificar') revisarTipos();
+      else if (b.dataset.s4 === 'hr-imprimir') { b.disabled = true; try { H.imprimirPdf(await pdfHojaRuta()); } catch (err) { console.error(err); H.toast('No se pudo preparar la impresión.', 'error'); } b.disabled = false; }
+    });
+    $('#hr-form').addEventListener('submit', async e => {
+      e.preventDefault(); const btn = e.submitter || $('#hr-form .btn.oro'); btn.disabled = true;
+      try { H.descargar(await pdfHojaRuta(), nombreHR()); H.toast('PDF descargado.'); } catch (err) { console.error(err); H.toast('No se pudo crear el PDF: ' + err.message, 'error'); }
+      btn.disabled = false;
+    });
+    previa();
+  }
+
   // ======================================================================= entrada
   const HERR = [
+    { seccion: 's4', id: 'hoja-ruta', titulo: 'Hoja de ruta', resumen: 'Vehículo, conductor, acompañante y movimiento. PDF con el formato de siempre, listo para imprimir.', grupo: 'Vehículos', chip: 'PDF', vista: vistaHojaRuta },
     { seccion: 's4', id: 'repostaje', titulo: 'Solicitud de repostaje', resumen: 'Por compañía: tipo de vehículo, litros automáticos, petacas, fechas y motivo. Sale en Excel.', grupo: 'Combustible', chip: 'Excel', vista: vistaSolicitud },
     { seccion: 's4', id: 'refundir-repostaje', titulo: 'Refundir solicitudes de repostaje', resumen: 'Junta las solicitudes de todas las compañías en un solo Excel con totales y desglose.', grupo: 'Combustible', chip: 'Excel', vista: vistaRefundir },
   ];
@@ -624,7 +761,7 @@
       const ruta = location.hash;
       if (ayudas) H = ayudas;
       if (/^#\/s4\/refundir-repostaje/.test(ruta)) { anadirSolicitudes([...files]); return true; }
-      if (/^#\/s4\/repostaje/.test(ruta)) { usarBase(files[0]); return true; }
+      if (/^#\/s4\/(repostaje|hoja-ruta)/.test(ruta)) { usarBase(files[0]); return true; }
       return false;
     },
     _base: B, _construirExcel: construirExcel, _leerSolicitud: leerSolicitud, _clasificar: clasificar,

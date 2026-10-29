@@ -86,7 +86,7 @@
   /** Modelos + herramientas (S4: repostaje…), solo para listarlos en las tarjetas. */
   const catalogo = () => [...todosDocs(), ...(window.HERRAMIENTAS || [])];
   const herramienta = (sec, id) => (window.HERRAMIENTAS || []).find(x => x.seccion === sec && x.id === id);
-  const ayudasHerr = () => ({ pintar, toast, descargar, animarEntrada, banda, ciasPersonal: () => S.personas.map(p => p.cia).filter(Boolean) });
+  const ayudasHerr = () => ({ pintar, toast, descargar, animarEntrada, banda, ciasPersonal: () => S.personas.map(p => p.cia).filter(Boolean), personas: () => S.personas, imprimirPdf });
   async function etiquetasDe(def) {
     if (!S.etiquetas[def.plantilla]) {
       const e = await M.etiquetas(window.PLANTILLAS[def.plantilla]);
