@@ -83,6 +83,10 @@
     return [...(window.MESA_DOCS || []), ...pr.map(defPropia)];
   }
   const docPorId = id => todosDocs().find(d => d.id === id);
+  /** Modelos + herramientas (S4: repostaje…), solo para listarlos en las tarjetas. */
+  const catalogo = () => [...todosDocs(), ...(window.HERRAMIENTAS || [])];
+  const herramienta = (sec, id) => (window.HERRAMIENTAS || []).find(x => x.seccion === sec && x.id === id);
+  const ayudasHerr = () => ({ pintar, toast, descargar, animarEntrada, banda, ciasPersonal: () => S.personas.map(p => p.cia).filter(Boolean) });
   async function etiquetasDe(def) {
     if (!S.etiquetas[def.plantilla]) {
       const e = await M.etiquetas(window.PLANTILLAS[def.plantilla]);
@@ -158,6 +162,7 @@
   window.addEventListener('drop', e => {
     e.preventDefault(); profundidad = 0; $('#soltar').classList.remove('activo');
     const f = e.dataTransfer.files[0]; if (!f) return;
+    if (window.S4 && window.S4.soltar(e.dataTransfer.files, ayudasHerr())) return;
     if (/\.docx$/i.test(f.name)) cargarPlantillaPropia(f);
     else if (/\.json$/i.test(f.name)) window.Moral.soltarArchivo(f);
     else cargarExcel(f);
@@ -183,7 +188,7 @@
     const s = SECCIONES[d.seccion];
     return `<a class="doc-card" href="#/${d.seccion}/${d.id}"><span class="doc-mini" aria-hidden="true"></span><span>
       <h4>${esc(d.titulo)}</h4><p>${esc(d.resumen || '')}</p>
-      <span class="meta"><span class="chip">${s.n}</span>${d.lista ? '<span class="chip oro">Lista · Excel, Word y PDF</span>' : '<span class="chip oro">Una o varias personas</span>'}</span></span></a>`;
+      <span class="meta"><span class="chip">${s.n}</span>${d.chip ? `<span class="chip oro">${esc(d.chip)}</span>` : d.lista ? '<span class="chip oro">Lista · Excel, Word y PDF</span>' : '<span class="chip oro">Una o varias personas</span>'}</span></span></a>`;
   }
   function listaDocs(docs) {
     if (!docs.length) return '';
@@ -191,7 +196,7 @@
     return Object.entries(grupos).map(([g, l]) => `<div class="grupo-docs"><h3>${esc(g)}</h3><div class="docs-grid">${l.map(tarjetaDoc).join('')}</div></div>`).join('');
   }
   function vistaInicio() {
-    const docs = todosDocs();
+    const docs = catalogo();
     const total = docs.length;
     const raiz = pintar(`
     <section class="portada portada-limpia cab-px" data-px><div class="cab-px-fondo" style="background-image:url('assets/img/foto-lanzamiento-masivo.jpg')"></div><div class="contenedor portada-centro cab-px-texto">
@@ -242,7 +247,7 @@
   }
 
   function vistaSeccion(sec) {
-    const s = SECCIONES[sec]; const docs = todosDocs().filter(d => d.seccion === sec);
+    const s = SECCIONES[sec]; const docs = catalogo().filter(d => d.seccion === sec);
     const foto = { s1: 'foto-a400m-salto', s2: 'foto-c295', s3: 'foto-puerta', s4: 'foto-sierra' }[sec];
     const raiz = pintar(`<section class="cab-px cab-seccion" data-px>
       <div class="cab-px-fondo" style="background-image:url('assets/img/${foto}.jpg')"></div><div class="cab-px-velo"></div>
@@ -1096,6 +1101,9 @@
     $$('.secciones-nav a').forEach(x => x.classList.toggle('activa', x.dataset.sec === a));
     window.onresize = null;
     if (!a) vistaInicio();
+    else if (SECCIONES[a] && b && herramienta(a, b)) {
+      const hz = herramienta(a, b); hz.vista(ayudasHerr()); document.title = hz.titulo + ' · IIBPAC'; window.scrollTo(0, 0); return;
+    }
     else if (SECCIONES[a] && b) {
       if (/^hoja_anual_servicios_(corta|larga)$/.test(b)) { location.replace('#/s1/hoja_anual_servicios'); return; }
       const d = docPorId(b); d ? vistaEditor(d) : vistaSeccion(a);
