@@ -185,6 +185,25 @@
         }
       }
     }
+    // 5) viñetas de las listas: docx-preview las pinta con ::before, que no es un nodo de texto
+    for (const el of elementos) {
+      const ps = getComputedStyle(el, '::before');
+      const m = /^"((?:[^"\\]|\\.)*)"$/.exec(ps.content || '');
+      if (!m || ps.display === 'none' || ps.visibility === 'hidden') continue;
+      const marca = m[1].replace(/\\([0-9a-fA-F]{1,6}) ?/g, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/\\(.)/g, '$1').replace(/\s+/g, ' ').trim();
+      if (!marca) continue;
+      const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let t, primera = null;
+      while (!primera && (t = tw.nextNode())) {
+        if (!t.textContent.trim()) continue;
+        rango.selectNodeContents(t); primera = Array.from(rango.getClientRects()).find(r => r.width > 0) || null;
+      }
+      if (!primera) continue;
+      const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+      const fam = familia(ps.fontFamily);
+      const tamPx = parseFloat(ps.fontSize) || parseFloat(cs.fontSize);
+      const x = r.left + (parseFloat(cs.paddingLeft) + (parseFloat(cs.textIndent) || 0)) * escala;
+      pagina.drawText(limpiar(marca), { x: X(x), y: Y(primera.top + ASC[fam] * tamPx * escala), size: tamPx * PX, font: F[fam][0], color: color(ps.color) || rgb(0, 0, 0) });
+    }
   }
 
   /** PDF que se va llenando documento a documento (para sacar muchos de golpe). */

@@ -351,4 +351,21 @@
     norma: 'Ley 53/1984 de incompatibilidades · Guía Burros: compatibilidad laboral',
     campos: [escala({ ayuda: 'Ej.: CGET ILG' }), firma()],
   });
+
+  // ================================================================== MORAL Y BIENESTAR
+  // La operación no va en la plantilla (la web es pública): se escribe aquí y sale en la cabecera y el texto.
+  reg({
+    id: 'autorizacion_red_moral_bienestar', plantilla: 'autorizacion_red_moral_bienestar',
+    titulo: 'Autorización de monitorización · red de Moral y Bienestar', grupo: 'Moral y Bienestar',
+    resumen: 'Uso de la red de Moral y Bienestar y autorización para monitorizar el tráfico. Pensada para rellenar a todo el personal de una vez.',
+    norma: 'Reglamento (UE) 2016/679 · LO 3/2018',
+    lote: true,
+    campos: [
+      T('operacion', 'Operación', { oblig: true, ayuda: 'Sale en la cabecera y en el texto. No se guarda en la web.' }),
+      firma(),
+    ],
+    calcular(d, av) {
+      if (!String(d.email || '').trim()) av.push({ tipo: 'aviso', txt: 'Sin correo: añade la columna «EMAIL CIVIL» al Excel y saldrá solo.' });
+    },
+  });
 })();
