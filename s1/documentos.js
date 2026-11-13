@@ -365,7 +365,7 @@
       firma(),
     ],
     calcular(d, av) {
-      if (!String(d.email || '').trim()) av.push({ tipo: 'aviso', txt: 'Sin correo: añade la columna «EMAIL CIVIL» al Excel y saldrá solo.' });
+      if (!String(d.email || '').trim()) av.push({ tipo: 'aviso', txt: 'Sin correo: el Excel no tiene columna de correo («EMAIL», «EMAIL CIVIL» o «CORREO»).' });
     },
   });
 })();
